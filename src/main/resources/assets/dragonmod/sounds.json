@@ -1,0 +1,63 @@
+{
+  "tail_whack": {
+    "subtitle": "subtitles.dragonmod.tail_whack",
+    "sounds": [
+      "dragonmod:tail_whack"
+    ]
+  },
+  "walk": {
+    "subtitle": "subtitles.dragonmod.walk",
+    "sounds": [
+      "dragonmod:walk"
+    ]
+  },
+  "bite": {
+    "subtitle": "subtitles.dragonmod.bite",
+    "sounds": [
+      "dragonmod:bite"
+    ]
+  },
+  "eating": {
+    "subtitle": "subtitles.dragonmod.eating",
+    "sounds": [
+      "dragonmod:eating"
+    ]
+  },
+  "epic_roar": {
+    "subtitle": "subtitles.dragonmod.epic_roar",
+    "sounds": [
+      "dragonmod:epic_roar"
+    ]
+  },
+  "fly": {
+    "subtitle": "subtitles.dragonmod.fly",
+    "sounds": [
+      "dragonmod:fly"
+    ]
+  },
+  "roar": {
+    "subtitle": "subtitles.dragonmod.roar",
+    "sounds": [
+      "dragonmod:roar_version_1",
+      "dragonmod:roar_version_2"
+    ]
+  },
+  "run": {
+    "subtitle": "subtitles.dragonmod.run",
+    "sounds": [
+      "dragonmod:run"
+    ]
+  },
+  "shake_prey": {
+    "subtitle": "subtitles.dragonmod.shake_prey",
+    "sounds": [
+      "dragonmod:shake_prey"
+    ]
+  },
+  "speak": {
+    "subtitle": "subtitles.dragonmod.speak",
+    "sounds": [
+      "dragonmod:speak"
+    ]
+  }
+}

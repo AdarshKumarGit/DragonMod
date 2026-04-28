@@ -1,5 +1,11 @@
 {
   "entity.dragonmod.dragon": "Dragon",
   "entity.dragonmod.dragon_egg": "Dragon Egg",
-  "item.dragonmod.dragon_egg": "Dragon Egg"
+  "item.dragonmod.dragon_egg": "Dragon Egg",
+
+  "key.categories.dragonmod": "Dragon",
+  "key.dragonmod.fire_breath": "Dragon: Fire Breath (hold)",
+  "key.dragonmod.fire_ball": "Dragon: Fireball",
+  "key.dragonmod.sit_toggle": "Dragon: Sit / Follow Toggle",
+  "key.dragonmod.mount_dragon": "Dragon: Mount / Dismount"
 }

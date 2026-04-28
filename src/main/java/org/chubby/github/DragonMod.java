@@ -128,7 +128,8 @@ public class DragonMod
     //  STATIC INITIALISER — network channel setup
     //
     //  Message index table:
-    //    0  →  MessageRiderFireInput   (client → server, rider fire mode)
+    //    0  →  PacketDragonFireInput   (client → server, rider fire mode)
+    //    1  →  PacketDragonControl     (client → server, sit/mount/dismount)
     // ════════════════════════════════════════════════════════════════════════
 
     static {
@@ -155,6 +156,15 @@ public class DragonMod
                 PacketDragonFireInput::encode,
                 PacketDragonFireInput::decode,
                 PacketDragonFireInput::handle,
+                java.util.Optional.of(NetworkDirection.PLAY_TO_SERVER)
+        );
+        // 1 -> PacketDragonControl  (client -> server, sit/mount/dismount)
+        NETWORK_WRAPPER.registerMessage(
+                1,
+                PacketDragonControl.class,
+                PacketDragonControl::encode,
+                PacketDragonControl::decode,
+                PacketDragonControl::handle,
                 java.util.Optional.of(NetworkDirection.PLAY_TO_SERVER)
         );
     }

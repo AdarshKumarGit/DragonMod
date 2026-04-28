@@ -1910,7 +1910,6 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
 
                 this.setYRot(passenger.getYRot());
                 this.setYHeadRot(passenger.getYHeadRot());
-                this.setXRot(passenger.getXRot());
                 Vec3 riderPos = this.getRiderPosition();
                 passenger.setPos(riderPos.x, riderPos.y, riderPos.z);
 
@@ -2359,12 +2358,10 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         float rs = Math.min(this.getRenderSize(), SIZE_RS_CAP);
 
         if (this.getDragonStage() <= 2) {
-            // Baby geo: the raw model is ~0.188 blocks wide at scale 1.0, so we
-            // need a large boost to make the hatchling visible.  At rs=1 (hatch)
-            // this gives vs=2.85 → visual width ≈ 0.54 blocks (slightly smaller
-            // than a player), which looks appropriate for a freshly-hatched dragon.
-            final float BABY_BASE  = 2.50f;
-            final float BABY_COEFF = 0.35f;
+            // Baby geo: kept intentionally small at hatch so the dragon looks
+            // like a true hatchling.  At rs=1: vs = 1.20 + 0.15 = 1.35.
+            final float BABY_BASE  = 1.20f;
+            final float BABY_COEFF = 0.15f;
             return BABY_BASE + rs * BABY_COEFF;
         } else {
             // Adult geo: cap mirrors getScale() → hitbox parts stay aligned.
@@ -2683,7 +2680,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
                 double strafing = (double)rider.xxa;
                 double vertical = (double)0.0F;
                 float speed = (float)this.getAttributeValue(Attributes.MOVEMENT_SPEED);
-                float airSpeedModifier = (float)((double)8.5F + (double)2.0F * Mth.map((double)speed, this.minimumSpeed, this.maximumSpeed, (double)0.0F, (double)1.5F));
+                float airSpeedModifier = (float)((double)4.0F + (double)0.8F * Mth.map((double)speed, this.minimumSpeed, this.maximumSpeed, (double)0.0F, (double)1.5F));
                 speed *= airSpeedModifier;
                 if (forward > (double)0.0F) {
                     this.setFlying(true);
@@ -3158,13 +3155,11 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
 
         float xzMod = this.getRideHorizontalBase() + extraXZ;
 
-        // ── Y: use visual scale * shoulder height so the rider sits ON the model
-        // rather than floating above it.  Wing-root geo Y ≈ 2.0 × visualScale.
+        // ── Y: seat the rider above the dragon's back.  Wing-root geo Y sits at
+        // roughly 2.8 × visualScale above the entity feet; using this as the base
+        // keeps the player on top of the model rather than clipped inside it.
         float vs = this.getVisualScale();
-        // shoulder_world_Y = entity.getY() + 2.0 * vs → yMod = 2.0 * vs + extras.
-        // Clamp to at least half the bounding box height so tiny babies aren't
-        // sunken into the ground, but never exceed the actual shoulder height.
-        float shoulderY = vs * 2.0f + extraY;
+        float shoulderY = vs * 2.8f + extraY;
         float yMod = Math.max(this.getBbHeight() * 0.50f, shoulderY);
 
         float headPosX = (float)(this.getX() + (double)(xzMod * Mth.cos((float)((double)(this.getYRot() + 90.0F) * Math.PI / (double)180.0F))));

@@ -47,10 +47,10 @@ public class EntityDragon extends EntityCustomDragon {
         super(t, worldIn, DragonType.FIRE,
                 (double) 1.0F,
                 (double) (1 + IafConfig.dragonAttackDamage),
-                30.0,      // minimumHealth  (was IafConfig.dragonHealth * 0.04)
-                750.0,     // maximumHealth  ← hardcoded to 750
-                (double) 0.15F,
-                (double) 0.4F);
+                8.0,       // minimumHealth  — small hatchling HP
+                350.0,     // maximumHealth  — balanced adult HP
+                (double) 0.12F,
+                (double) 0.25F);
         this.setPathfindingMalus(BlockPathTypes.DAMAGE_FIRE, 0.0F);
         this.setPathfindingMalus(BlockPathTypes.LAVA, 8.0F);
     }
@@ -106,7 +106,9 @@ public class EntityDragon extends EntityCustomDragon {
         if (!this.level().isClientSide && attackTarget != null) {
             // ── Melee proximity check ────────────────────────────────────────
             // Base sphere — catches anything within the dragon's general radius.
-            float inflate = 2.5F + this.getRenderSize() * 0.33F;
+            // Reduced coefficient (0.33→0.15) so a max-size dragon's reach is
+            // ~6 blocks rather than the original ~12.
+            float inflate = 1.5F + this.getRenderSize() * 0.15F;
             boolean sphereHit = this.getBoundingBox()
                     .inflate(inflate, inflate, inflate)
                     .intersects(attackTarget.getBoundingBox());
@@ -119,8 +121,8 @@ public class EntityDragon extends EntityCustomDragon {
             AnimationState currentAnim = getCurrentAnimation();
             if (!sphereHit && (currentAnim == ANIMATION_BITE || currentAnim == ANIMATION_WINGBLAST)) {
                 net.minecraft.world.phys.Vec3 look = this.getLookAngle();
-                // Reach: 1.8× bounding width + scale factor to cover the head sweep
-                double reach  = this.getBbWidth() * 1.8 + this.getRenderSize() * 0.15;
+                // Reach trimmed to 1.0× bounding width + small scale factor.
+                double reach  = this.getBbWidth() * 1.0 + this.getRenderSize() * 0.07;
                 double halfW  = this.getBbWidth() * 0.55;
                 // Project the AABB centre forward from the dragon's eye level
                 double cx = this.getX() + look.x * reach * 0.5;
@@ -410,17 +412,13 @@ public class EntityDragon extends EntityCustomDragon {
     }
 
     // -----------------------------------------------------------------------
-    // positionRider
+    // positionRider — delegates entirely to EntityCustomDragon.positionRider.
+    // The duplicate setPos that used to live here was redundant: the super
+    // already calls getRiderPosition() and positions the passenger.
     // -----------------------------------------------------------------------
     @Override
     public void positionRider(@NotNull Entity passenger, @NotNull Entity.@NotNull MoveFunction callback) {
         super.positionRider(passenger, callback);
-        if (this.hasPassenger(passenger)
-                && this.getControllingPassenger() != null
-                && this.getControllingPassenger().getUUID().equals(passenger.getUUID())) {
-            Vec3 riderPos = this.getRiderPosition();
-            passenger.setPos(riderPos.x, riderPos.y, riderPos.z);
-        }
     }
 
     // -----------------------------------------------------------------------

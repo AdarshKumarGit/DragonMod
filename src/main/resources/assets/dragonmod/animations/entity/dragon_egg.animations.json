@@ -1,6 +1,19 @@
 {
 	"format_version": "1.8.0",
 	"animations": {
+		"idle": {
+			"loop": true,
+			"animation_length": 1,
+			"bones": {
+				"Egg": {
+					"rotation": {
+						"0.0": {
+							"vector": [0, 0, 0]
+						}
+					}
+				}
+			}
+		},
 		"warming": {
 			"loop": true,
 			"animation_length": 1,

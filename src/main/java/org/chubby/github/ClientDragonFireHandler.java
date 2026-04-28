@@ -47,7 +47,17 @@ public final class ClientDragonFireHandler {
             return;
         }
 
-        // Must be riding a custom dragon
+        // MOUNT_DRAGON (V): mount nearest owned dragon when on foot, dismount when riding.
+        // Checked before the vehicle guard so it works in both states.
+        if (DragonFireKeybinds.MOUNT_DRAGON.consumeClick()) {
+            byte action = (player.getVehicle() instanceof EntityCustomDragon)
+                    ? PacketDragonControl.DISMOUNT
+                    : PacketDragonControl.MOUNT;
+            DragonMod.NETWORK_WRAPPER.sendToServer(new PacketDragonControl(action));
+            return;
+        }
+
+        // Must be riding a custom dragon for all remaining keybinds.
         Entity vehicle = player.getVehicle();
         if (!(vehicle instanceof EntityCustomDragon dragon)) {
             stopFire(player);
@@ -67,6 +77,13 @@ public final class ClientDragonFireHandler {
         if (DragonFireKeybinds.FIRE_BALL.consumeClick()) {
             DragonMod.NETWORK_WRAPPER.sendToServer(
                     new PacketDragonFireInput(dragon.getId(), (byte) 2));
+            return;
+        }
+
+        // SIT_TOGGLE (G): while mounted, toggle sit ↔ follow.
+        if (DragonFireKeybinds.SIT_TOGGLE.consumeClick()) {
+            DragonMod.NETWORK_WRAPPER.sendToServer(
+                    new PacketDragonControl(PacketDragonControl.SIT_TOGGLE));
             return;
         }
 

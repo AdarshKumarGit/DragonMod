@@ -2340,8 +2340,15 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         float rs = Math.min(this.getRenderSize(), SIZE_RS_CAP);
 
         if (this.getDragonStage() <= 2) {
-            // Baby: starts very small at hatch (≈0.19), grows smoothly into adult.
-            final float BABY_BASE  = 0.10F;
+            // Baby hitbox/collision scale.  Kept large enough that the bounding
+            // box height (≈ 2.5 × scale ≈ 1.7 b) is comparable to the rendered
+            // baby model. The previous tiny value (~0.19) caused IaF's dragon
+            // container GUI to compute an enormous zoom factor (it divides a
+            // base size by getBbHeight()), then GeckoLib applied the visual
+            // scale on top — making the GUI dragon look gigantic.
+            // Visual rendering still uses getVisualScale() (decoupled), so the
+            // in-world appearance of the baby is unchanged by this value.
+            final float BABY_BASE  = 0.60F;
             final float BABY_COEFF = 0.09F;
             return BABY_BASE + rs * BABY_COEFF;
         }
@@ -3153,13 +3160,16 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
             extraY += this.getRideHeightBase() * 0.45F;
         }
 
-        float xzMod = this.getRideHorizontalBase() + extraXZ;
+        // Tunable saddle offsets requested by feel-testing:
+        //   +2.4 X: pushes the rider forward to the wing-root saddle area.
+        //   −1.3 Y: drops the player onto the back instead of hovering above.
+        float xzMod = this.getRideHorizontalBase() + extraXZ + 2.4F;
 
         // ── Y: seat the rider above the dragon's back.  Wing-root geo Y sits at
         // roughly 2.8 × visualScale above the entity feet; using this as the base
         // keeps the player on top of the model rather than clipped inside it.
         float vs = this.getVisualScale();
-        float shoulderY = vs * 2.8f + extraY;
+        float shoulderY = vs * 2.8f + extraY - 1.3F;
         float yMod = Math.max(this.getBbHeight() * 0.50f, shoulderY);
 
         float headPosX = (float)(this.getX() + (double)(xzMod * Mth.cos((float)((double)(this.getYRot() + 90.0F) * Math.PI / (double)180.0F))));

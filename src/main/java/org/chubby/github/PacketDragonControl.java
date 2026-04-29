@@ -21,12 +21,14 @@ import java.util.function.Supplier;
  *   0  SIT_TOGGLE   – toggle the mounted dragon's sit/follow command
  *   1  MOUNT        – mount the nearest tamed dragon owned by this player
  *   2  DISMOUNT     – dismount from the current vehicle
+ *   3  BITE         – trigger a bite attack on the mounted dragon
  */
 public class PacketDragonControl {
 
     public static final byte SIT_TOGGLE = 0;
     public static final byte MOUNT      = 1;
     public static final byte DISMOUNT   = 2;
+    public static final byte BITE       = 3;
 
     /** Search radius (blocks) for MOUNT action. */
     private static final double MOUNT_SEARCH_RADIUS = 12.0;
@@ -89,6 +91,15 @@ public class PacketDragonControl {
                     if (player.getVehicle() instanceof EntityCustomDragon) {
                         player.stopRiding();
                     }
+                }
+
+                case BITE -> {
+                    Entity vehicle = player.getVehicle();
+                    if (!(vehicle instanceof EntityDragon dragon)) return;
+                    if (!dragon.isTame()) return;
+                    if (!player.getUUID().equals(dragon.getOwnerUUID())) return;
+                    // Flag is consumed in EntityDragon.aiStep() on the next server tick.
+                    dragon.riderBiteRequest = true;
                 }
             }
         });

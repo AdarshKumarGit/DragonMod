@@ -12,6 +12,7 @@ import org.lwjgl.glfw.GLFW;
  *  FIRE_BALL        – tap to launch a single fireball projectile (F)
  *  SIT_TOGGLE       – while mounted, toggles dragon between sit and follow (G)
  *  MOUNT_DRAGON     – dismount when riding; mount nearest tamed dragon when on foot (V)
+ *  DRAGON_BITE      – while mounted, trigger a single bite attack (B)
  */
 public final class DragonFireKeybinds {
 
@@ -45,12 +46,21 @@ public final class DragonFireKeybinds {
             "key.categories.dragonmod"
     );
 
+    /** While mounted, trigger a single bite attack. */
+    public static final KeyMapping DRAGON_BITE = new KeyMapping(
+            "key.dragonmod.dragon_bite",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_B,
+            "key.categories.dragonmod"
+    );
+
     /** Call once from RegisterKeyMappingsEvent. */
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(FIRE_BREATH);
         event.register(FIRE_BALL);
         event.register(SIT_TOGGLE);
         event.register(MOUNT_DRAGON);
+        event.register(DRAGON_BITE);
     }
 
     private DragonFireKeybinds() {}

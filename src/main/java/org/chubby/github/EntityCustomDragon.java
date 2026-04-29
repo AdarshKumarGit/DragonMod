@@ -2144,6 +2144,15 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
                 this.ANIMATION_TAILWHACK.stop();
             }
         }
+        // ANIMATION_BITE is 0.6 s = 12 ticks.  Without an explicit stop the
+        // SYNCED_ANIM_ID stays ANIM_ID_BITE, the controller's setAndContinue call
+        // restarts the animation every frame, and isPlayingAttackAnimation() blocks
+        // all subsequent attacks.  Clear it at tick 14 (12 + 2 buffer).
+        if (getCurrentAnimation() == ANIMATION_BITE
+                && getAnimationTick(ANIMATION_BITE) >= 14) {
+            this.stopCurrentAnimation();
+            this.ANIMATION_BITE.stop();
+        }
         // speakAnimTicks counts down the talk animation lifetime (see SPEAK_ANIM_DURATION).
         // The per-tick SYNCED_ANIM_ID sync block below reads this to hold the SPEAK ID.
         if (!this.level().isClientSide) {
@@ -2306,17 +2315,15 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
 
     @Override
     public @NotNull EntityDimensions getDimensions(@NotNull Pose poseIn) {
-        float s = this.getScale();   // collision/physics scale — intentionally small for babies
+        float s = this.getScale();
         if (this.getDragonStage() <= 2) {
-            // Baby: compact 2.5×2.5 base keeps the collision box proportional.
-            // The visual model is rendered larger by getVisualScale() in the renderer.
-            return EntityDimensions.scalable(2.5f, 2.5f).scale(s);
+            // Baby: wide and flat so F3+B shows a disc rather than a clump of
+            // equal-sided boxes.  Width > height gives a "lying dragon" profile.
+            return EntityDimensions.scalable(4.0f, 1.5f).scale(s);
         } else {
-            // Adult: taller base matches the model's actual visual height.
-            // Adult geo body top sits at ~3.5 blocks above the feet at scale 1.0,
-            // so the old 2.5-block height cut off the upper body and head.
-            // Width 3.0 covers the body (1.69 b) with comfortable margin.
-            return EntityDimensions.scalable(3.0f, 3.5f).scale(s);
+            // Adult: similarly wider than tall so the hitbox covers the body
+            // footprint without towering over the model.
+            return EntityDimensions.scalable(5.5f, 2.5f).scale(s);
         }
     }
 
@@ -3114,68 +3121,49 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     }
 
     public Vec3 getRiderPosition() {
-        float extraXZ = 0.0F;
-        float extraY = 0.0F;
-        float pitchXZ = 0.0F;
-        float pitchY = 0.0F;
+        float vs = this.getVisualScale();
         float dragonPitch = this.getDragonPitch();
-
-        // ── Pitch compensation: shift the saddle point up/forward when the
-        // dragon nose pitches up, and down/back when diving.
-        // These constants are intentionally modest so the rider stays visible
-        // and on-model even at extreme pitch angles.
-        if (dragonPitch > 0.0F) {
-            // Nose-up / climbing: rider slides slightly back and up.
-            pitchXZ = -Math.min(dragonPitch / 90.0F, 0.25F);  // push back
-            pitchY  =  (dragonPitch / 90.0F) * 0.45F;          // push up
-        } else if (dragonPitch < 0.0F) {
-            // Nose-down / diving: rider slides slightly forward and down.
-            pitchXZ = Math.max(dragonPitch / 90.0F, -0.35F);  // push forward
-            pitchY  = (dragonPitch / 90.0F) * 0.10F;           // push down (small)
-        }
-
-        extraXZ += pitchXZ * this.getRenderSize();
-        extraY  += pitchY  * this.getRenderSize();
-
-        float linearFactor = Mth.map((float)Math.max(this.getAgeInDays() - 50, 0), 0.0F, 75.0F, 0.0F, 1.0F);
         LivingEntity rider = this.getControllingPassenger();
 
-        // Small look-angle tweak so looking up/down doesn't feel disconnected.
-        if (rider != null && rider.getXRot() < 0.0F) {
-            extraY += (float)Mth.map((double)rider.getXRot(), (double)60.0F, (double)-40.0F, -0.05, 0.05);
-        }
+        // Forward offset: +2.4 tuned to land near the wing-root saddle area.
+        float xzMod = this.getRideHorizontalBase() + 2.4F;
 
-        if (!this.isHovering() && !this.isFlying()) {
-            if (rider != null && rider.zza > 0.0F) {
-                float MAX_RAISE_HEIGHT = 0.6F * linearFactor + this.getRideHeightBase() * 0.1F;
-                this.riderWalkingExtraY = Math.min(MAX_RAISE_HEIGHT, this.riderWalkingExtraY + 0.05F);
-            } else {
-                this.riderWalkingExtraY = Math.max(0.0F, this.riderWalkingExtraY - 0.10F);
-            }
-            extraY += this.riderWalkingExtraY;
+        // Vertical seat height differs for ground vs flight.
+        // On ground the -1.3 offset made the rider clip through the body because
+        // shoulderY dropped below the bounding-box mid-point; give separate bases.
+        float shoulderY;
+        if (this.isFlying() || this.isHovering()) {
+            float linearFactor = Mth.map(
+                    (float)Math.max(this.getAgeInDays() - 50, 0), 0.0F, 75.0F, 0.0F, 1.0F);
+            shoulderY = vs * 1.5f + 0.5F * linearFactor + this.getRideHeightBase() * 0.35F;
         } else {
-            // In-flight: use a modest fixed lift so the rider sits on top of the
-            // model and stays fully visible at all sizes (including max size).
-            extraY += 0.6F * linearFactor;
-            extraY += this.getRideHeightBase() * 0.45F;
+            // Ground: slight bounce when walking forward.
+            if (rider != null && rider.zza > 0.0F) {
+                float linearFactor = Mth.map(
+                        (float)Math.max(this.getAgeInDays() - 50, 0), 0.0F, 75.0F, 0.0F, 1.0F);
+                float MAX_RAISE = 0.4F * linearFactor + this.getRideHeightBase() * 0.08F;
+                this.riderWalkingExtraY = Math.min(MAX_RAISE, this.riderWalkingExtraY + 0.04F);
+            } else {
+                this.riderWalkingExtraY = Math.max(0.0F, this.riderWalkingExtraY - 0.08F);
+            }
+            shoulderY = vs * 1.7f + this.riderWalkingExtraY;
         }
 
-        // Tunable saddle offsets requested by feel-testing:
-        //   +2.4 X: pushes the rider forward to the wing-root saddle area.
-        //   −1.3 Y: drops the player onto the back instead of hovering above.
-        float xzMod = this.getRideHorizontalBase() + extraXZ + 2.4F;
+        // Full 3D pitch rotation: rotate the local-body saddle point
+        // (xzMod forward, shoulderY up) by the dragon's current pitch angle.
+        // This makes the rider follow the dragon's back surface exactly during
+        // climbs and dives without any approximation coefficients.
+        float pitchRad = dragonPitch * (float)(Math.PI / 180.0);
+        float cosP = (float)Math.cos(pitchRad);
+        float sinP = (float)Math.sin(pitchRad);
+        float worldForward = xzMod * cosP - shoulderY * sinP;
+        float worldUp      = xzMod * sinP + shoulderY * cosP;
 
-        // ── Y: seat the rider above the dragon's back.  Wing-root geo Y sits at
-        // roughly 2.8 × visualScale above the entity feet; using this as the base
-        // keeps the player on top of the model rather than clipped inside it.
-        float vs = this.getVisualScale();
-        float shoulderY = vs * 2.8f + extraY - 1.3F;
-        float yMod = Math.max(this.getBbHeight() * 0.50f, shoulderY);
-
-        float headPosX = (float)(this.getX() + (double)(xzMod * Mth.cos((float)((double)(this.getYRot() + 90.0F) * Math.PI / (double)180.0F))));
-        float headPosY = (float)(this.getY() + (double)yMod);
-        float headPosZ = (float)(this.getZ() + (double)(xzMod * Mth.sin((float)((double)(this.getYRot() + 90.0F) * Math.PI / (double)180.0F))));
-        return new Vec3((double)headPosX, (double)headPosY, (double)headPosZ);
+        float yawRad = (this.getYRot() + 90.0F) * (float)(Math.PI / 180.0);
+        float headPosX = (float)(this.getX() + worldForward * Math.cos(yawRad));
+        float headPosY = (float)(this.getY() + worldUp);
+        float headPosZ = (float)(this.getZ() + worldForward * Math.sin(yawRad));
+        return new Vec3(headPosX, headPosY, headPosZ);
     }
 
     public @NotNull Vec3 getDismountLocationForPassenger(LivingEntity passenger) {

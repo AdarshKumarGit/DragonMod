@@ -2,6 +2,7 @@ package org.chubby.github;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.api.distmarker.Dist;
@@ -57,6 +58,15 @@ public final class ClientDragonFireHandler {
             return;
         }
 
+        // DRAGON_WHISTLE (Z): call the dragon to you.  Works on foot or mounted.
+        if (DragonFireKeybinds.DRAGON_WHISTLE.consumeClick()) {
+            DragonMod.NETWORK_WRAPPER.sendToServer(
+                    new PacketDragonControl(PacketDragonControl.WHISTLE));
+            mc.player.displayClientMessage(
+                    Component.literal("Dragon: Whistling..."), true);
+            return;
+        }
+
         // Must be riding a custom dragon for all remaining keybinds.
         Entity vehicle = player.getVehicle();
         if (!(vehicle instanceof EntityCustomDragon dragon)) {
@@ -70,6 +80,12 @@ public final class ClientDragonFireHandler {
         if (DragonFireKeybinds.SIT_TOGGLE.consumeClick()) {
             DragonMod.NETWORK_WRAPPER.sendToServer(
                     new PacketDragonControl(PacketDragonControl.SIT_TOGGLE));
+            // Action-bar popup: show what the dragon will do after toggle.
+            // command 1 = currently sitting → will start following.
+            // command 0/2 = currently following/sleeping → will sit.
+            String nextState = (dragon.getCommand() == 1) ? "Following" : "Sitting";
+            mc.player.displayClientMessage(
+                    Component.literal("Dragon: " + nextState), true);
             return;
         }
 

@@ -180,7 +180,7 @@
 				}
 			}
 		},
-		"walk": {
+		"walking": {
 			"loop": true,
 			"animation_length": 0.75,
 			"bones": {
@@ -636,7 +636,7 @@
 				}
 			}
 		},
-		"run": {
+		"running": {
 			"loop": true,
 			"animation_length": 0.625,
 			"bones": {

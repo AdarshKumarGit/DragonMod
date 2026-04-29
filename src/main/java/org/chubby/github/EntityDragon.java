@@ -95,13 +95,58 @@ public class EntityDragon extends EntityCustomDragon {
     /** Set to true for one tick by the network handler when the rider releases R after streaming. */
     public volatile boolean riderStreamStop      = false;
 
+    /** Set to true for one tick by the network handler when the rider taps B. */
+    public volatile boolean riderBiteRequest     = false;
+
     /** Cooldown ticks between rider fireballs. */
     private int riderFireballCooldown = 0;
 
+    /** Cooldown ticks between rider-triggered bites. */
+    private int riderBiteCooldown = 0;
+
     private static final int RIDER_FIREBALL_COOLDOWN = 25;
+    private static final int RIDER_BITE_COOLDOWN     = 18;
+    /** Reach (blocks) used to find a bite target in front of the dragon's head. */
+    private static final double RIDER_BITE_REACH     = 4.0;
 
     public void aiStep() {
         super.aiStep();
+
+        // Tick down the rider bite cooldown every server tick.
+        if (!this.level().isClientSide && this.riderBiteCooldown > 0) {
+            --this.riderBiteCooldown;
+        }
+
+        // ── Rider bite (B): consume the volatile flag set by the network handler ──
+        // Plays ANIMATION_BITE and damages any single entity inside a short
+        // forward reach of the dragon's head. Works for any stage (including baby).
+        if (!this.level().isClientSide && this.riderBiteRequest) {
+            this.riderBiteRequest = false;
+            if (this.riderBiteCooldown == 0 && !this.isPlayingAttackAnimation()) {
+                this.groundAttack = IafDragonAttacks.Ground.BITE;
+                startAnimation(ANIMATION_BITE);
+                this.riderBiteCooldown = RIDER_BITE_COOLDOWN;
+
+                // Find a single entity within the dragon's forward bite reach.
+                Vec3 look = this.getLookAngle();
+                double cx = this.getX() + look.x * RIDER_BITE_REACH * 0.5;
+                double cy = this.getY() + this.getBbHeight() * 0.65 + look.y * RIDER_BITE_REACH * 0.4;
+                double cz = this.getZ() + look.z * RIDER_BITE_REACH * 0.5;
+                double half = Math.max(this.getBbWidth() * 0.55, RIDER_BITE_REACH * 0.5);
+                net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
+                        cx - half, cy - half, cz - half,
+                        cx + half, cy + half, cz + half);
+                LivingEntity rider = this.getControllingPassenger();
+                java.util.List<LivingEntity> nearby = this.level().getEntitiesOfClass(
+                        LivingEntity.class, biteBox,
+                        e -> e != this && e != rider && e.isAlive() && !this.isPassengerOfSameVehicle(e));
+                if (!nearby.isEmpty()) {
+                    nearby.sort(java.util.Comparator.comparingDouble(this::distanceToSqr));
+                    this.doHurtTarget(nearby.get(0));
+                }
+            }
+        }
+
         LivingEntity attackTarget = this.getTarget();
         if (!this.level().isClientSide && attackTarget != null) {
             // ── Melee proximity check ────────────────────────────────────────

@@ -64,6 +64,22 @@ public final class ClientDragonFireHandler {
             return;
         }
 
+        // SIT_TOGGLE (G): works for all stages including baby — checked
+        // BEFORE the fire-only baby guard, otherwise hatchling riders could
+        // never toggle sit/follow.
+        if (DragonFireKeybinds.SIT_TOGGLE.consumeClick()) {
+            DragonMod.NETWORK_WRAPPER.sendToServer(
+                    new PacketDragonControl(PacketDragonControl.SIT_TOGGLE));
+            return;
+        }
+
+        // DRAGON_BITE (B): trigger a melee bite. Available to all stages.
+        if (DragonFireKeybinds.DRAGON_BITE.consumeClick()) {
+            DragonMod.NETWORK_WRAPPER.sendToServer(
+                    new PacketDragonControl(PacketDragonControl.BITE));
+            return;
+        }
+
         // Babies can't breathe fire
         if (dragon.getDragonStage() < 2) {
             stopFire(player);
@@ -77,13 +93,6 @@ public final class ClientDragonFireHandler {
         if (DragonFireKeybinds.FIRE_BALL.consumeClick()) {
             DragonMod.NETWORK_WRAPPER.sendToServer(
                     new PacketDragonFireInput(dragon.getId(), (byte) 2));
-            return;
-        }
-
-        // SIT_TOGGLE (G): while mounted, toggle sit ↔ follow.
-        if (DragonFireKeybinds.SIT_TOGGLE.consumeClick()) {
-            DragonMod.NETWORK_WRAPPER.sendToServer(
-                    new PacketDragonControl(PacketDragonControl.SIT_TOGGLE));
             return;
         }
 

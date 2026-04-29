@@ -54,6 +54,14 @@ public final class DragonFireKeybinds {
             "key.categories.dragonmod"
     );
 
+    /** Whistle to call the nearest tamed dragon to the player's location. */
+    public static final KeyMapping DRAGON_WHISTLE = new KeyMapping(
+            "key.dragonmod.dragon_whistle",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_Z,
+            "key.categories.dragonmod"
+    );
+
     /** Call once from RegisterKeyMappingsEvent. */
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(FIRE_BREATH);
@@ -61,6 +69,7 @@ public final class DragonFireKeybinds {
         event.register(SIT_TOGGLE);
         event.register(MOUNT_DRAGON);
         event.register(DRAGON_BITE);
+        event.register(DRAGON_WHISTLE);
     }
 
     private DragonFireKeybinds() {}

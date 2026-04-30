@@ -1913,6 +1913,14 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
                 Vec3 riderPos = this.getRiderPosition();
                 passenger.setPos(riderPos.x, riderPos.y, riderPos.z);
 
+                // Stick the rider's pitch to the dragon's pitch so the player
+                // visibly tilts with the dragon during climbs and dives.
+                // xRotO is set to the same value so the per-frame interpolation
+                // doesn't swing across the change and cause a one-tick judder.
+                float dragonPitch = this.getDragonPitch();
+                passenger.setXRot(dragonPitch);
+                passenger.xRotO = dragonPitch;
+
             } else {
                 this.updatePreyInMouth(passenger);
             }
@@ -3125,34 +3133,35 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         float dragonPitch = this.getDragonPitch();
         LivingEntity rider = this.getControllingPassenger();
 
-        // Forward offset: +2.4 tuned to land near the wing-root saddle area.
+        // Forward offset: +2.4 lands the rider at the wing-root saddle area.
         float xzMod = this.getRideHorizontalBase() + 2.4F;
 
-        // Vertical seat height differs for ground vs flight.
-        // On ground the -1.3 offset made the rider clip through the body because
-        // shoulderY dropped below the bounding-box mid-point; give separate bases.
-        float shoulderY;
-        if (this.isFlying() || this.isHovering()) {
-            float linearFactor = Mth.map(
-                    (float)Math.max(this.getAgeInDays() - 50, 0), 0.0F, 75.0F, 0.0F, 1.0F);
-            shoulderY = vs * 1.5f + 0.5F * linearFactor + this.getRideHeightBase() * 0.35F;
-        } else {
-            // Ground: slight bounce when walking forward.
+        // Vertical seat height — derived from the geo body-top so the rider
+        // sits ON the visible model rather than inside it.
+        //   adult body top in geo space ≈ 3.5 b at scale 1.0
+        //   baby  body top in geo space ≈ 0.34 b at scale 1.0
+        // Multiplying by visualScale (which the renderer applies) gives the
+        // body top in world-space blocks above the entity feet; add a small
+        // saddle-clearance lift so the player sits just above it.
+        float bodyTop = (this.getDragonStage() <= 2) ? (vs * 0.34f) : (vs * 3.50f);
+        float shoulderY = bodyTop + 0.30f;
+
+        // Walking bounce: small upward push when the rider drives the dragon
+        // forward on the ground.
+        if (!this.isFlying() && !this.isHovering()) {
             if (rider != null && rider.zza > 0.0F) {
-                float linearFactor = Mth.map(
-                        (float)Math.max(this.getAgeInDays() - 50, 0), 0.0F, 75.0F, 0.0F, 1.0F);
-                float MAX_RAISE = 0.4F * linearFactor + this.getRideHeightBase() * 0.08F;
-                this.riderWalkingExtraY = Math.min(MAX_RAISE, this.riderWalkingExtraY + 0.04F);
+                this.riderWalkingExtraY = Math.min(0.25F, this.riderWalkingExtraY + 0.04F);
             } else {
                 this.riderWalkingExtraY = Math.max(0.0F, this.riderWalkingExtraY - 0.08F);
             }
-            shoulderY = vs * 1.7f + this.riderWalkingExtraY;
+            shoulderY += this.riderWalkingExtraY;
         }
 
-        // Full 3D pitch rotation: rotate the local-body saddle point
-        // (xzMod forward, shoulderY up) by the dragon's current pitch angle.
-        // This makes the rider follow the dragon's back surface exactly during
-        // climbs and dives without any approximation coefficients.
+        // Full 2D pitch rotation in the (forward, up) plane: rotate the local
+        // saddle point (xzMod, shoulderY) around the dragon's lateral axis by
+        // its current pitch.  The rider then follows the back surface exactly
+        // when the dragon climbs or dives — no more "player stays still while
+        // the dragon pitches".
         float pitchRad = dragonPitch * (float)(Math.PI / 180.0);
         float cosP = (float)Math.cos(pitchRad);
         float sinP = (float)Math.sin(pitchRad);

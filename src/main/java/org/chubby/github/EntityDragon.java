@@ -129,9 +129,9 @@ public class EntityDragon extends EntityCustomDragon {
 
                 // Find a single entity within the dragon's forward bite reach.
                 Vec3 look = this.getLookAngle();
-                double cx = this.getX() + look.x * RIDER_BITE_REACH * 0.5;
-                double cy = this.getY() + this.getBbHeight() * 0.65 + look.y * RIDER_BITE_REACH * 0.4;
-                double cz = this.getZ() + look.z * RIDER_BITE_REACH * 0.5;
+                double cx = this.headPart.getX() + look.x * RIDER_BITE_REACH * 0.5;
+                double cy = this.headPart.getY() + look.y * RIDER_BITE_REACH * 0.4;
+                double cz = this.headPart.getZ() + look.z * RIDER_BITE_REACH * 0.5;
                 double half = Math.max(this.getBbWidth() * 0.55, RIDER_BITE_REACH * 0.5);
                 net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
                         cx - half, cy - half, cz - half,

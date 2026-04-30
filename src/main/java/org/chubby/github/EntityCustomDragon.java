@@ -1913,14 +1913,6 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
                 Vec3 riderPos = this.getRiderPosition();
                 passenger.setPos(riderPos.x, riderPos.y, riderPos.z);
 
-                // Stick the rider's pitch to the dragon's pitch so the player
-                // visibly tilts with the dragon during climbs and dives.
-                // xRotO is set to the same value so the per-frame interpolation
-                // doesn't swing across the change and cause a one-tick judder.
-                float dragonPitch = this.getDragonPitch();
-                passenger.setXRot(dragonPitch);
-                passenger.xRotO = dragonPitch;
-
             } else {
                 this.updatePreyInMouth(passenger);
             }
@@ -3143,7 +3135,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         // Multiplying by visualScale (which the renderer applies) gives the
         // body top in world-space blocks above the entity feet; add a small
         // saddle-clearance lift so the player sits just above it.
-        float bodyTop = (this.getDragonStage() <= 2) ? (vs * 0.34f) : (vs * 3.50f);
+        float bodyTop = (this.getDragonStage() <= 2) ? (vs * 0.34f) : (vs * 3.12f);
         float shoulderY = bodyTop + 0.30f;
 
         // Walking bounce: small upward push when the rider drives the dragon

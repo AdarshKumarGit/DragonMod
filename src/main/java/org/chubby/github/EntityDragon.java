@@ -128,11 +128,16 @@ public class EntityDragon extends EntityCustomDragon {
                 this.riderBiteCooldown = RIDER_BITE_COOLDOWN;
 
                 // Find a single entity within the dragon's forward bite reach.
+                Vec3 headOrigin = (this.headPart != null)
+                        ? new Vec3(this.headPart.getX(), this.headPart.getY(), this.headPart.getZ())
+                        : this.getHeadPartPosition();
                 Vec3 look = this.getLookAngle();
-                double cx = this.headPart.getX() + look.x * RIDER_BITE_REACH * 0.5;
-                double cy = this.headPart.getY() + look.y * RIDER_BITE_REACH * 0.4;
-                double cz = this.headPart.getZ() + look.z * RIDER_BITE_REACH * 0.5;
-                double half = Math.max(this.getBbWidth() * 0.55, RIDER_BITE_REACH * 0.5);
+                // Project the box centre one full RIDER_BITE_REACH ahead of the
+                // snout so it covers the space directly in front of the jaws.
+                double cx   = headOrigin.x + look.x * RIDER_BITE_REACH;
+                double cy   = headOrigin.y + look.y * RIDER_BITE_REACH * 0.5;
+                double cz   = headOrigin.z + look.z * RIDER_BITE_REACH;
+                double half = Math.max(this.getBbWidth() * 0.45, RIDER_BITE_REACH * 0.6);
                 net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
                         cx - half, cy - half, cz - half,
                         cx + half, cy + half, cz + half);
@@ -166,13 +171,16 @@ public class EntityDragon extends EntityCustomDragon {
             AnimationState currentAnim = getCurrentAnimation();
             if (!sphereHit && (currentAnim == ANIMATION_BITE || currentAnim == ANIMATION_WINGBLAST)) {
                 net.minecraft.world.phys.Vec3 look = this.getLookAngle();
-                // Reach trimmed to 1.0× bounding width + small scale factor.
-                double reach  = this.getBbWidth() * 1.0 + this.getRenderSize() * 0.07;
-                double halfW  = this.getBbWidth() * 0.55;
-                // Project the AABB centre forward from the dragon's eye level
-                double cx = this.getX() + look.x * reach * 0.5;
-                double cy = this.getY() + this.getBbHeight() * 0.65 + look.y * reach * 0.4;
-                double cz = this.getZ() + look.z * reach * 0.5;
+                // Project the AABB from the head-part world position so that
+                // the melee reach box tracks the animated snout, not the body.
+                Vec3 headCenter = (this.headPart != null)
+                        ? new Vec3(this.headPart.getX(), this.headPart.getY(), this.headPart.getZ())
+                        : new Vec3(this.getX(), this.getY() + this.getBbHeight() * 0.65, this.getZ());
+                double reach = this.getBbWidth() * 1.0 + this.getRenderSize() * 0.07;
+                double halfW = this.getBbWidth() * 0.55;
+                double cx = headCenter.x + look.x * reach * 0.5;
+                double cy = headCenter.y + look.y * reach * 0.4;
+                double cz = headCenter.z + look.z * reach * 0.5;
                 forwardHit = new net.minecraft.world.phys.AABB(
                         cx - halfW, cy - halfW, cz - halfW,
                         cx + halfW, cy + halfW, cz + halfW)

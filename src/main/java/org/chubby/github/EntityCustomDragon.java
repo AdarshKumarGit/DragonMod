@@ -1911,7 +1911,15 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
                 this.setYRot(passenger.getYRot());
                 this.setYHeadRot(passenger.getYHeadRot());
                 Vec3 riderPos = this.getRiderPosition();
-                passenger.setPos(riderPos.x, riderPos.y, riderPos.z);
+
+                // Safety floor: ensure the rider can never sink below the
+                // dragon's own feet level plus a minimum body clearance.
+                // getRiderPosition() accounts for pitch via 2-D rotation, but
+                // at extreme dive angles (nose-down > ~50°) worldUp can go
+                // negative and the player clips through the terrain.
+                double safeY = Math.max(riderPos.y,
+                        this.getY() + (this.getDragonStage() <= 2 ? 0.5 : 1.5));
+                passenger.setPos(riderPos.x, safeY, riderPos.z);
 
             } else {
                 this.updatePreyInMouth(passenger);
@@ -2149,7 +2157,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         // restarts the animation every frame, and isPlayingAttackAnimation() blocks
         // all subsequent attacks.  Clear it at tick 14 (12 + 2 buffer).
         if (getCurrentAnimation() == ANIMATION_BITE
-                && getAnimationTick(ANIMATION_BITE) >= 14) {
+                && getAnimationTick(ANIMATION_BITE) >= 25) {
             this.stopCurrentAnimation();
             this.ANIMATION_BITE.stop();
         }
@@ -3160,6 +3168,14 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         float worldForward = xzMod * cosP - shoulderY * sinP;
         float worldUp      = xzMod * sinP + shoulderY * cosP;
 
+        // Clamp: worldUp is the rider's height above the entity origin after
+        // rotating by dragon pitch.  A steep nose-down angle produces a
+        // negative worldUp (rider below the entity feet).  The floor here
+        // matches the safeY clamp in positionRider() and prevents the
+        // position maths itself from ever generating an underground value.
+        float minWorldUp = (this.getDragonStage() <= 2) ? 0.8f : 2.0f;
+        worldUp = Math.max(worldUp, minWorldUp);
+
         float yawRad = (this.getYRot() + 90.0F) * (float)(Math.PI / 180.0);
         float headPosX = (float)(this.getX() + worldForward * Math.cos(yawRad));
         float headPosY = (float)(this.getY() + worldUp);
@@ -3892,7 +3908,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         controllers.add(new AnimationController<>(
                 this,
                 "bite_controller",
-                2,
+                0,
                 animState -> {
                     if (animState.getAnimatable().getSyncedAnimId() == ANIM_ID_BITE) {
                         return animState.setAndContinue(

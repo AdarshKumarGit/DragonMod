@@ -714,13 +714,55 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
      * }</pre>
      */
     public void updatePartsForRender(float partialTick) {
-        if (this.headPart == null) return;   // parts not yet initialised
-        // Temporarily replace yBodyRot with the per-frame interpolated value so
-        // EntityUtil.updatePart() places parts exactly where the model is drawn.
+        if (this.headPart == null) return;
+
+        // Substitute the per-frame interpolated yaw so computePartPositions()
+        // places hitbox parts exactly where the rendered model is this frame.
         float savedYaw = this.yBodyRot;
-        this.yBodyRot  = Mth.rotLerp(partialTick, this.yBodyRotO, this.yBodyRot);
+        this.yBodyRot  = net.minecraft.util.Mth.rotLerp(partialTick, this.yBodyRotO, this.yBodyRot);
         computePartPositions();
         this.yBodyRot  = savedYaw;
+
+        // Align each part's xo/yo/zo to its new x/y/z.
+        //
+        // WHY THIS IS NEEDED:
+        // computePartPositions() only writes x/y/z (current position).
+        // Minecraft renders entities by interpolating xo→x each frame.
+        // The game-tick savePartOldPositions() (called at 20 TPS inside
+        // updateParts()) is the *authoritative* writer of xo/yo/zo, but it
+        // runs BEFORE computePartPositions() on that same tick.  By the time
+        // the renderer calls updatePartsForRender() the x/y/z values are
+        // frame-interpolated positions, not tick-end positions, so the delta
+        // (x - xo) is a mix of physics-tick delta and frame-fraction delta.
+        // This produces visible part "scatter" — the boxes drift in the
+        // direction of motion and snap back each tick.
+        //
+        // By writing xo = x here (after the frame computation) we set the
+        // delta to zero so Minecraft renders the part exactly at x/y/z with
+        // no additional interpolation.  On the next physics tick,
+        // savePartOldPositions() overwrites xo/yo/zo with the correct
+        // tick-start snapshot, restoring normal per-tick interpolation.
+        syncPartOldToCurrentForRender();
+    }
+
+    private void syncPartOldToCurrentForRender() {
+        syncOldToCurrentForRender(this.headPart);
+        syncOldToCurrentForRender(this.neckPart);
+        syncOldToCurrentForRender(this.rightWingUpperPart);
+        syncOldToCurrentForRender(this.rightWingLowerPart);
+        syncOldToCurrentForRender(this.leftWingUpperPart);
+        syncOldToCurrentForRender(this.leftWingLowerPart);
+        syncOldToCurrentForRender(this.tail1Part);
+        syncOldToCurrentForRender(this.tail2Part);
+        syncOldToCurrentForRender(this.tail3Part);
+        syncOldToCurrentForRender(this.tail4Part);
+    }
+
+    private static void syncOldToCurrentForRender(EntityDragonPart part) {
+        if (part == null) return;
+        part.xo = part.getX();
+        part.yo = part.getY();
+        part.zo = part.getZ();
     }
 
     private void liftPart(EntityDragonPart part, double worldY) {
@@ -2157,7 +2199,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         // restarts the animation every frame, and isPlayingAttackAnimation() blocks
         // all subsequent attacks.  Clear it at tick 14 (12 + 2 buffer).
         if (getCurrentAnimation() == ANIMATION_BITE
-                && getAnimationTick(ANIMATION_BITE) >= 25) {
+                && getAnimationTick(ANIMATION_BITE) >= 14) {
             this.stopCurrentAnimation();
             this.ANIMATION_BITE.stop();
         }
@@ -3129,25 +3171,27 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     }
 
     public Vec3 getRiderPosition() {
-        float vs = this.getVisualScale();
+        float vs          = this.getVisualScale();
         float dragonPitch = this.getDragonPitch();
         LivingEntity rider = this.getControllingPassenger();
 
         // Forward offset: +2.4 lands the rider at the wing-root saddle area.
         float xzMod = this.getRideHorizontalBase() + 2.4F;
 
-        // Vertical seat height — derived from the geo body-top so the rider
-        // sits ON the visible model rather than inside it.
-        //   adult body top in geo space ≈ 3.5 b at scale 1.0
-        //   baby  body top in geo space ≈ 0.34 b at scale 1.0
-        // Multiplying by visualScale (which the renderer applies) gives the
-        // body top in world-space blocks above the entity feet; add a small
-        // saddle-clearance lift so the player sits just above it.
-        float bodyTop = (this.getDragonStage() <= 2) ? (vs * 0.34f) : (vs * 3.12f);
-        float shoulderY = bodyTop + 0.30f;
+        // ── Saddle height ─────────────────────────────────────────────────────
+        // We want the rider to sit ON the dragon's back surface, not above it.
+        //
+        // Adult geo back/spine sits at roughly 2.10 blocks above the entity
+        // origin at visualScale = 1.0 (measured from dragon_geo.json bone Y
+        // values for the body/torso, not the wing-root which is higher).
+        // Using vs*3.12 (the wing bone) was too high — the player floated.
+        //
+        // A small negative clearance (-0.15f) sinks the player slightly into
+        // the saddle so they look seated rather than balanced on top.
+        float bodyTop   = (this.getDragonStage() <= 2) ? (vs * 0.34f) : (vs * 2.10f);
+        float shoulderY = bodyTop - 0.15f;
 
-        // Walking bounce: small upward push when the rider drives the dragon
-        // forward on the ground.
+        // Walking bounce: small upward push when the rider drives forward on ground.
         if (!this.isFlying() && !this.isHovering()) {
             if (rider != null && rider.zza > 0.0F) {
                 this.riderWalkingExtraY = Math.min(0.25F, this.riderWalkingExtraY + 0.04F);
@@ -3157,26 +3201,18 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
             shoulderY += this.riderWalkingExtraY;
         }
 
-        // Full 2D pitch rotation in the (forward, up) plane: rotate the local
-        // saddle point (xzMod, shoulderY) around the dragon's lateral axis by
-        // its current pitch.  The rider then follows the back surface exactly
-        // when the dragon climbs or dives — no more "player stays still while
-        // the dragon pitches".
-        float pitchRad = dragonPitch * (float)(Math.PI / 180.0);
-        float cosP = (float)Math.cos(pitchRad);
-        float sinP = (float)Math.sin(pitchRad);
+        // Full 2-D pitch rotation in the (forward, up) plane.
+        float pitchRad   = dragonPitch * (float)(Math.PI / 180.0);
+        float cosP       = (float)Math.cos(pitchRad);
+        float sinP       = (float)Math.sin(pitchRad);
         float worldForward = xzMod * cosP - shoulderY * sinP;
         float worldUp      = xzMod * sinP + shoulderY * cosP;
 
-        // Clamp: worldUp is the rider's height above the entity origin after
-        // rotating by dragon pitch.  A steep nose-down angle produces a
-        // negative worldUp (rider below the entity feet).  The floor here
-        // matches the safeY clamp in positionRider() and prevents the
-        // position maths itself from ever generating an underground value.
+        // Floor: prevent rider going below entity feet on steep dives.
         float minWorldUp = (this.getDragonStage() <= 2) ? 0.8f : 2.0f;
         worldUp = Math.max(worldUp, minWorldUp);
 
-        float yawRad = (this.getYRot() + 90.0F) * (float)(Math.PI / 180.0);
+        float yawRad   = (this.getYRot() + 90.0F) * (float)(Math.PI / 180.0);
         float headPosX = (float)(this.getX() + worldForward * Math.cos(yawRad));
         float headPosY = (float)(this.getY() + worldUp);
         float headPosZ = (float)(this.getZ() + worldForward * Math.sin(yawRad));
@@ -3911,6 +3947,11 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
                 0,
                 animState -> {
                     if (animState.getAnimatable().getSyncedAnimId() == ANIM_ID_BITE) {
+                        // forceAnimationReset() clears GeckoLib's "already playing this
+                        // animation" guard so PLAY_ONCE always restarts from frame 0
+                        // even if the controller previously held the final frame.
+                        // Without this, every bite after the first is silently ignored.
+                        animState.getController().forceAnimationReset();
                         return animState.setAndContinue(
                                 RawAnimation.begin()
                                         .then("bite", Animation.LoopType.PLAY_ONCE));

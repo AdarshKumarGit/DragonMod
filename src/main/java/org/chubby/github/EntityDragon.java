@@ -39,16 +39,15 @@ public class EntityDragon extends EntityCustomDragon {
     public static final ResourceLocation SKELETON_LOOT = ResourceLocation.fromNamespaceAndPath("iceandfire", "entities/dragon/fire_dragon_skeleton");
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  CONSTRUCTOR — max health hardcoded to 750 (min = 750 × 0.04 = 30).
-    //  The health scales linearly from minimumHealth to maximumHealth as the
-    //  dragon ages through 125 in-game days (see EntityCustomDragon.updateAttributes).
+    //  Baby (stage 1) HP = 20; final stage adult HP = 750.
+    //  Linear interpolation across 125 in-game days.
     // ═══════════════════════════════════════════════════════════════════════
     public EntityDragon(EntityType<? extends EntityCustomDragon> t, Level worldIn) {
         super(t, worldIn, DragonType.FIRE,
                 (double) 1.0F,
                 (double) (1 + IafConfig.dragonAttackDamage),
-                8.0,       // minimumHealth  — small hatchling HP
-                350.0,     // maximumHealth  — balanced adult HP
+                20.0,
+                750.0,
                 (double) 0.12F,
                 (double) 0.25F);
         this.setPathfindingMalus(BlockPathTypes.DAMAGE_FIRE, 0.0F);
@@ -106,8 +105,8 @@ public class EntityDragon extends EntityCustomDragon {
 
     private static final int RIDER_FIREBALL_COOLDOWN = 25;
     private static final int RIDER_BITE_COOLDOWN     = 18;
-    /** Reach (blocks) used to find a bite target in front of the dragon's head. */
-    private static final double RIDER_BITE_REACH     = 4.0;
+    /** Spherical bite range (blocks) measured from the head hitbox part. */
+    private static final double RIDER_BITE_REACH     = 3.0;
 
     public void aiStep() {
         super.aiStep();
@@ -118,36 +117,34 @@ public class EntityDragon extends EntityCustomDragon {
         }
 
         // ── Rider bite (B): consume the volatile flag set by the network handler ──
-        // Plays ANIMATION_BITE and damages any single entity inside a short
-        // forward reach of the dragon's head. Works for any stage (including baby).
+        // Damages every living entity within RIDER_BITE_REACH blocks of the
+        // headPart and plays ANIMATION_BITE.  Works at any stage (including baby).
         if (!this.level().isClientSide && this.riderBiteRequest) {
             this.riderBiteRequest = false;
-            if (this.riderBiteCooldown == 0 && !this.isPlayingAttackAnimation()) {
+            if (this.riderBiteCooldown == 0) {
                 this.groundAttack = IafDragonAttacks.Ground.BITE;
+                // Force-restart so a still-playing previous bite doesn't swallow this one.
+                this.stopCurrentAnimation();
+                this.ANIMATION_BITE.stop();
                 startAnimation(ANIMATION_BITE);
                 this.riderBiteCooldown = RIDER_BITE_COOLDOWN;
 
-                // Find a single entity within the dragon's forward bite reach.
                 Vec3 headOrigin = (this.headPart != null)
                         ? new Vec3(this.headPart.getX(), this.headPart.getY(), this.headPart.getZ())
                         : this.getHeadPartPosition();
-                Vec3 look = this.getLookAngle();
-                // Project the box centre one full RIDER_BITE_REACH ahead of the
-                // snout so it covers the space directly in front of the jaws.
-                double cx   = headOrigin.x + look.x * RIDER_BITE_REACH;
-                double cy   = headOrigin.y + look.y * RIDER_BITE_REACH * 0.5;
-                double cz   = headOrigin.z + look.z * RIDER_BITE_REACH;
-                double half = Math.max(this.getBbWidth() * 0.45, RIDER_BITE_REACH * 0.6);
+                double r = RIDER_BITE_REACH;
+                double r2 = r * r;
                 net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
-                        cx - half, cy - half, cz - half,
-                        cx + half, cy + half, cz + half);
+                        headOrigin.x - r, headOrigin.y - r, headOrigin.z - r,
+                        headOrigin.x + r, headOrigin.y + r, headOrigin.z + r);
                 LivingEntity rider = this.getControllingPassenger();
                 java.util.List<LivingEntity> nearby = this.level().getEntitiesOfClass(
                         LivingEntity.class, biteBox,
-                        e -> e != this && e != rider && e.isAlive() && !this.isPassengerOfSameVehicle(e));
-                if (!nearby.isEmpty()) {
-                    nearby.sort(java.util.Comparator.comparingDouble(this::distanceToSqr));
-                    this.doHurtTarget(nearby.get(0));
+                        e -> e != this && e != rider && e.isAlive()
+                                && !this.isPassengerOfSameVehicle(e)
+                                && e.distanceToSqr(headOrigin.x, headOrigin.y, headOrigin.z) <= r2);
+                for (LivingEntity target : nearby) {
+                    this.doHurtTarget(target);
                 }
             }
         }

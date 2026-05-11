@@ -376,7 +376,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     }
 
     public static AttributeSupplier.Builder bakeAttributes() {
-        return Mob.createMobAttributes().add(Attributes.MAX_HEALTH, (double)20.0F).add(Attributes.MOVEMENT_SPEED, 0.3).add(Attributes.ATTACK_DAMAGE, (double)1.0F).add(Attributes.FOLLOW_RANGE, (double)Math.min(2048, IafConfig.dragonTargetSearchLength)).add(Attributes.ARMOR, (double)4.0F);
+        return Mob.createMobAttributes().add(Attributes.MAX_HEALTH, (double)750.0F).add(Attributes.MOVEMENT_SPEED, 0.3).add(Attributes.ATTACK_DAMAGE, (double)1.0F).add(Attributes.FOLLOW_RANGE, (double)Math.min(2048, IafConfig.dragonTargetSearchLength)).add(Attributes.ARMOR, (double)4.0F);
     }
 
     public void setConfigurableAttributes() {
@@ -616,68 +616,65 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
      * debug boxes (F3+B) stay tightly aligned with the model at any partial tick.
      */
     private void computePartPositions() {
-        // Step 1 — IaF utility sets X/Z from each part's forwardOffset + yawOffset.
-        EntityUtil.updatePart(this.headPart,           this);
-        EntityUtil.updatePart(this.neckPart,           this);
-        EntityUtil.updatePart(this.rightWingUpperPart, this);
-        EntityUtil.updatePart(this.rightWingLowerPart, this);
-        EntityUtil.updatePart(this.leftWingUpperPart,  this);
-        EntityUtil.updatePart(this.leftWingLowerPart,  this);
-        EntityUtil.updatePart(this.tail1Part,          this);
-        EntityUtil.updatePart(this.tail2Part,          this);
-        EntityUtil.updatePart(this.tail3Part,          this);
-        EntityUtil.updatePart(this.tail4Part,          this);
-
-        // Step 2 — Fix Y: EntityUtil.updatePart places parts at entity.getY() (feet).
-        // Lift each part to its actual bone-centre height in the world.
-        // Formula:  worldY = entity.getY()  +  geo_bone_y_blocks * visualScale
-        float vs = this.getVisualScale();   // parts track the rendered model
+        // Recompute all hitbox parts manually so the pitch rotation that the
+        // renderer applies to the model also rotates the parts.  Each part is
+        // positioned by (forwardOffset along the dragon's facing, yawOffset for
+        // side parts like wings, and a bone Y above the entity feet).
+        //
+        // Pitch handling: when the dragon pitches (climbs / dives) the head
+        // moves up/down and the tail moves the opposite way.  We rotate the
+        // forward axis through dragonPitch so part Y tracks the rendered model.
+        float vs = this.getVisualScale();
 
         if (this.getDragonStage() <= 2) {
-            // ── Baby geo Y positions ───────────────────────────────────────────
-            // geo bone Y values (in MC blocks at scale 1.0):
-            //   head cubes     y≈4.20/16 = 0.263 b
-            //   neck cubes     y≈3.75/16 = 0.234 b
-            //   wing bones     y≈4.00/16 = 0.250 b
-            //   tail bones     y≈3.50/16 = 0.219 b
-            double headY  = this.getY() + 0.263f * vs;
-            double neckY  = this.getY() + 0.234f * vs;
-            double wingY  = this.getY() + 0.250f * vs;
-            double tailY  = this.getY() + 0.219f * vs;
-
-            liftPart(this.headPart,           headY);
-            liftPart(this.neckPart,           neckY);
-            liftPart(this.rightWingUpperPart, wingY);
-            liftPart(this.rightWingLowerPart, wingY);
-            liftPart(this.leftWingUpperPart,  wingY);
-            liftPart(this.leftWingLowerPart,  wingY);
-            liftPart(this.tail1Part,          tailY);
-            liftPart(this.tail2Part,          tailY);
-            liftPart(this.tail3Part,          tailY);
-            liftPart(this.tail4Part,          tailY);
-
+            // Baby geo: bone Y values measured at scale 1.0 (geo px / 16).
+            final double Y_HEAD = 0.263, Y_NECK = 0.234, Y_WING = 0.250, Y_TAIL = 0.219;
+            setPartPosWithPitch(this.headPart,            0.639f * vs,  0.0f,  Y_HEAD * vs);
+            setPartPosWithPitch(this.neckPart,            0.453f * vs,  0.0f,  Y_NECK * vs);
+            setPartPosWithPitch(this.rightWingUpperPart,  0.219f * vs, 90.0f,  Y_WING * vs);
+            setPartPosWithPitch(this.rightWingLowerPart,  0.641f * vs, 92.0f,  Y_WING * vs);
+            setPartPosWithPitch(this.leftWingUpperPart,   0.219f * vs,-90.0f,  Y_WING * vs);
+            setPartPosWithPitch(this.leftWingLowerPart,   0.641f * vs,-92.0f,  Y_WING * vs);
+            setPartPosWithPitch(this.tail1Part,          -0.203f * vs,  0.0f,  Y_TAIL * vs);
+            setPartPosWithPitch(this.tail2Part,          -0.422f * vs,  0.0f,  Y_TAIL * vs);
+            setPartPosWithPitch(this.tail3Part,          -0.60f  * vs,  0.0f,  Y_TAIL * vs);
+            setPartPosWithPitch(this.tail4Part,          -0.78f  * vs,  0.0f,  Y_TAIL * vs);
         } else {
-            // ── Adult geo Y positions ──────────────────────────────────────────
-            // geo bone Y values (in MC blocks at scale 1.0, from dragon_geo.json):
-            //   head2 / jaw    y≈3.00 b
-            //   neck avg       y≈2.91 b
-            //   wing bones     y≈3.12 b
-            //   tail seg 1–4   y≈2.75 / 2.97 / 3.00 / 3.03 b
-            double headY  = this.getY() + 3.00f * vs;
-            double neckY  = this.getY() + 2.91f * vs;
-            double wingY  = this.getY() + 3.12f * vs;
-
-            liftPart(this.headPart,           headY);
-            liftPart(this.neckPart,           neckY);
-            liftPart(this.rightWingUpperPart, wingY);
-            liftPart(this.rightWingLowerPart, wingY);
-            liftPart(this.leftWingUpperPart,  wingY);
-            liftPart(this.leftWingLowerPart,  wingY);
-            liftPart(this.tail1Part,          this.getY() + 2.75f * vs);
-            liftPart(this.tail2Part,          this.getY() + 2.97f * vs);
-            liftPart(this.tail3Part,          this.getY() + 3.00f * vs);
-            liftPart(this.tail4Part,          this.getY() + 3.03f * vs);
+            // Adult geo: bone Y values from dragon.geo.json (px / 16).
+            setPartPosWithPitch(this.headPart,            8.6f  * vs,  0.0f, 3.00 * vs);
+            setPartPosWithPitch(this.neckPart,            6.05f * vs,  0.0f, 2.91 * vs);
+            setPartPosWithPitch(this.rightWingUpperPart,  5.75f * vs, 90.0f, 3.12 * vs);
+            setPartPosWithPitch(this.rightWingLowerPart, 18.5f  * vs, 92.0f, 3.12 * vs);
+            setPartPosWithPitch(this.leftWingUpperPart,   5.75f * vs,-90.0f, 3.12 * vs);
+            setPartPosWithPitch(this.leftWingLowerPart,  18.5f  * vs,-92.0f, 3.12 * vs);
+            setPartPosWithPitch(this.tail1Part,          -1.69f * vs,  0.0f, 2.75 * vs);
+            setPartPosWithPitch(this.tail2Part,          -3.81f * vs,  0.0f, 2.97 * vs);
+            setPartPosWithPitch(this.tail3Part,          -7.84f * vs,  0.0f, 3.00 * vs);
+            setPartPosWithPitch(this.tail4Part,         -13.03f * vs,  0.0f, 3.03 * vs);
         }
+    }
+
+    /**
+     * Places a hitbox part relative to the dragon, applying both yBodyRot
+     * (yaw) and dragonPitch.  Positive forwardOffset = in front of the dragon;
+     * positive yawOffset rotates the part sideways from straight-ahead.  The
+     * pitch rotates the forward axis about the world-X horizontal so head/tail
+     * track the visually pitched model when gliding up or down.
+     */
+    private void setPartPosWithPitch(EntityDragonPart part,
+                                     double forwardOffset,
+                                     float  yawOffsetDeg,
+                                     double boneY) {
+        if (part == null) return;
+        float yawRad   = (float) Math.toRadians(this.yBodyRot + yawOffsetDeg);
+        float pitchRad = (float) Math.toRadians(this.getDragonPitch());
+        double cosP = Math.cos(pitchRad);
+        double sinP = Math.sin(pitchRad);
+        double horiz = forwardOffset * cosP;
+        double dx = -Math.sin(yawRad) * horiz;
+        double dz =  Math.cos(yawRad) * horiz;
+        double y  = this.getY() + boneY - sinP * forwardOffset;
+        part.setPos(this.getX() + dx, y, this.getZ() + dz);
     }
 
     /**
@@ -763,11 +760,6 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         part.xo = part.getX();
         part.yo = part.getY();
         part.zo = part.getZ();
-    }
-
-    private void liftPart(EntityDragonPart part, double worldY) {
-        if (part == null) return;
-        part.setPos(part.getX(), worldY, part.getZ());
     }
 
     /**
@@ -2367,13 +2359,12 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     public @NotNull EntityDimensions getDimensions(@NotNull Pose poseIn) {
         float s = this.getScale();
         if (this.getDragonStage() <= 2) {
-            // Baby: wide and flat so F3+B shows a disc rather than a clump of
-            // equal-sided boxes.  Width > height gives a "lying dragon" profile.
-            return EntityDimensions.scalable(4.0f, 1.5f).scale(s);
+            // Baby geo visible_bounds: 3 × 2.5 blocks.
+            return EntityDimensions.scalable(3.0f, 2.5f).scale(s);
         } else {
-            // Adult: similarly wider than tall so the hitbox covers the body
-            // footprint without towering over the model.
-            return EntityDimensions.scalable(5.5f, 2.5f).scale(s);
+            // Adult geo visible_bounds_height: 5.5 blocks.  Width 41 in geo is
+            // the full wingspan; trim to body+folded-wings for the physics AABB.
+            return EntityDimensions.scalable(6.0f, 5.5f).scale(s);
         }
     }
 

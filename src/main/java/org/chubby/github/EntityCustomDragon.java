@@ -586,7 +586,43 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
             this.tail4Part.copyPosition(this);
             this.tail4Part.setParent(this);
         }
+        rebuildPartsArray();
     }
+
+    // ── Multipart hooks ──────────────────────────────────────────────────────
+    // Forge's PartEntity system requires the parent entity to advertise its
+    // sub-parts via these two methods — otherwise the level only tracks the
+    // single main AABB and F3+B renders just one hitbox.  IaF's EntityDragonBase
+    // doesn't implement them in a way the debug renderer picks up, so we
+    // expose our own array here.
+
+    private net.minecraftforge.entity.PartEntity<?>[] dragonPartsArray = new net.minecraftforge.entity.PartEntity<?>[0];
+
+    private void rebuildPartsArray() {
+        java.util.List<net.minecraftforge.entity.PartEntity<?>> list = new java.util.ArrayList<>(10);
+        if (this.headPart            != null) list.add(this.headPart);
+        if (this.neckPart            != null) list.add(this.neckPart);
+        if (this.rightWingUpperPart  != null) list.add(this.rightWingUpperPart);
+        if (this.rightWingLowerPart  != null) list.add(this.rightWingLowerPart);
+        if (this.leftWingUpperPart   != null) list.add(this.leftWingUpperPart);
+        if (this.leftWingLowerPart   != null) list.add(this.leftWingLowerPart);
+        if (this.tail1Part           != null) list.add(this.tail1Part);
+        if (this.tail2Part           != null) list.add(this.tail2Part);
+        if (this.tail3Part           != null) list.add(this.tail3Part);
+        if (this.tail4Part           != null) list.add(this.tail4Part);
+        this.dragonPartsArray = list.toArray(new net.minecraftforge.entity.PartEntity<?>[0]);
+    }
+
+    @Override
+    public boolean isMultipartEntity() {
+        return true;
+    }
+
+    @Override
+    public net.minecraftforge.entity.PartEntity<?>[] getParts() {
+        return this.dragonPartsArray;
+    }
+
 
     @Override
     public void updateParts() {

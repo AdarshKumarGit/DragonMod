@@ -34,11 +34,11 @@ public final class DragonRiderRenderHandler {
 
         PoseStack pose = event.getPoseStack();
         pose.pushPose();
-        // Rotate around the player's hip so the body tilts in place rather
-        // than swinging head-first through the saddle.
-        pose.translate(0.0f, 0.9f, 0.0f);
+        // Rotate the player about their feet (local origin) so they lean with
+        // the dragon's back.  The dragon model uses the matching transform
+        // Axis.XP.rotationDegrees(-pitch) in EntityCustomDragonRenderer, so
+        // the rider stays visually parallel to the spine.
         pose.mulPose(Axis.XP.rotationDegrees(-pitch));
-        pose.translate(0.0f, -0.9f, 0.0f);
     }
 
     @SubscribeEvent

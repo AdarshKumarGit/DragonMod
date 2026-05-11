@@ -2359,12 +2359,14 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     public @NotNull EntityDimensions getDimensions(@NotNull Pose poseIn) {
         float s = this.getScale();
         if (this.getDragonStage() <= 2) {
-            // Baby geo visible_bounds: 3 × 2.5 blocks.
-            return EntityDimensions.scalable(3.0f, 2.5f).scale(s);
+            // Baby — snug to the hatchling body so head/wing/tail parts stick
+            // out as separate hitboxes in F3+B rather than being engulfed.
+            return EntityDimensions.scalable(1.2f, 1.0f).scale(s);
         } else {
-            // Adult geo visible_bounds_height: 5.5 blocks.  Width 41 in geo is
-            // the full wingspan; trim to body+folded-wings for the physics AABB.
-            return EntityDimensions.scalable(6.0f, 5.5f).scale(s);
+            // Adult — body-only footprint.  Head/neck/wings/tail are
+            // EntityDragonParts and intentionally extend outside this AABB so
+            // each draws as its own debug hitbox.
+            return EntityDimensions.scalable(2.5f, 3.0f).scale(s);
         }
     }
 
@@ -3170,17 +3172,14 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         float xzMod = this.getRideHorizontalBase() + 2.4F;
 
         // ── Saddle height ─────────────────────────────────────────────────────
-        // We want the rider to sit ON the dragon's back surface, not above it.
-        //
-        // Adult geo back/spine sits at roughly 2.10 blocks above the entity
-        // origin at visualScale = 1.0 (measured from dragon_geo.json bone Y
-        // values for the body/torso, not the wing-root which is higher).
-        // Using vs*3.12 (the wing bone) was too high — the player floated.
-        //
-        // A small negative clearance (-0.15f) sinks the player slightly into
-        // the saddle so they look seated rather than balanced on top.
-        float bodyTop   = (this.getDragonStage() <= 2) ? (vs * 0.34f) : (vs * 2.10f);
-        float shoulderY = bodyTop - 0.15f;
+        // Sit the rider ON the dragon's back surface (top of the body cube),
+        // not inside the body.  Adult body cube tops out at y=56/16 = 3.5 b
+        // above the entity origin at visualScale = 1.0 (from dragon.geo.json).
+        // The earlier 2.10 value tracked the body centre, which put the rider's
+        // legs inside the torso. +0.10 lifts the rider a hair clear of the
+        // spine spikes so they look seated, not embedded.
+        float bodyTop   = (this.getDragonStage() <= 2) ? (vs * 0.50f) : (vs * 3.50f);
+        float shoulderY = bodyTop + 0.10f;
 
         // Walking bounce: small upward push when the rider drives forward on ground.
         if (!this.isFlying() && !this.isHovering()) {

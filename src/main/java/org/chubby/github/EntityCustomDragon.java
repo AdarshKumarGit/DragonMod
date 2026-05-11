@@ -2359,73 +2359,47 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     public @NotNull EntityDimensions getDimensions(@NotNull Pose poseIn) {
         float s = this.getScale();
         if (this.getDragonStage() <= 2) {
-            // Baby — snug to the hatchling body so head/wing/tail parts stick
-            // out as separate hitboxes in F3+B rather than being engulfed.
-            return EntityDimensions.scalable(1.2f, 1.0f).scale(s);
+            // Baby: 2.5×2.5 base keeps the body AABB proportional to the
+            // visually-boosted hatchling model so head/wing/tail parts still
+            // poke out of the main hitbox in F3+B.
+            return EntityDimensions.scalable(2.5f, 2.5f).scale(s);
         } else {
-            // Adult — body-only footprint.  Head/neck/wings/tail are
-            // EntityDragonParts and intentionally extend outside this AABB so
-            // each draws as its own debug hitbox.
-            return EntityDimensions.scalable(2.5f, 3.0f).scale(s);
+            // Adult: 3.0×3.5 covers the body silhouette (~1.6 b wide, ~3.5 b
+            // tall) and leaves head/neck/wings/tail parts visibly outside.
+            return EntityDimensions.scalable(3.0f, 3.5f).scale(s);
         }
     }
 
     public float getScale() {
-        // -----------------------------------------------------------------------
-        // Maps renderSize (1 – 30) to a visual + hitbox scale factor.
-        //
-        // Physical/visual size is CAPPED at the 85-day renderSize (≈15.5) so the
-        // dragon stops growing physically after day 85, even as health and stage
-        // continue to increase past that point.
-        //
-        // Baby dragons (stage 1–2) use a separate, much smaller formula so the
-        // hatchling appears appropriately tiny when it first emerges from the egg.
-        //
-        // Adult compact range (capped at day-85 size ≈ scale 1.41):
-        //   Stage 3  (renderSize  7–13)  → scale 0.78 – 1.23
-        //   Stage 4  (renderSize 13–15.5)→ scale 1.23 – 1.41  ← hard cap
-        // -----------------------------------------------------------------------
-        // Size is capped at the scale equivalent to 85 in-game days (renderSize ≈ 15.5).
-        final float SIZE_RS_CAP = 15.5f;
-        float rs = Math.min(this.getRenderSize(), SIZE_RS_CAP);
-
-        if (this.getDragonStage() <= 2) {
-            // Baby hitbox/collision scale.  Kept large enough that the bounding
-            // box height (≈ 2.5 × scale ≈ 1.7 b) is comparable to the rendered
-            // baby model. The previous tiny value (~0.19) caused IaF's dragon
-            // container GUI to compute an enormous zoom factor (it divides a
-            // base size by getBbHeight()), then GeckoLib applied the visual
-            // scale on top — making the GUI dragon look gigantic.
-            // Visual rendering still uses getVisualScale() (decoupled), so the
-            // in-world appearance of the baby is unchanged by this value.
-            final float BABY_BASE  = 0.60F;
-            final float BABY_COEFF = 0.09F;
-            return BABY_BASE + rs * BABY_COEFF;
-        }
-
-        final float BASE  = 0.25F;   // minimum adult scale
-        final float COEFF = 0.075F;  // growth per renderSize unit
-        final float MAX   = 2.40F;   // ceiling (unreachable after 85-day cap)
-        return Math.min(BASE + rs * COEFF, MAX);
+        // Single growth curve covering all stages.  Compact range so the
+        // entity AABB stays sensible at the day-125 cap.
+        //   Stage 1  (rs  1– 3)  → 0.41 – 0.52
+        //   Stage 2  (rs  3– 7)  → 0.52 – 0.74
+        //   Stage 3  (rs  7–13)  → 0.74 – 1.07
+        //   Stage 4  (rs 13–20)  → 1.07 – 1.45
+        //   Stage 5  (rs 20–30)  → 1.45 – 2.00
+        final float BASE  = 0.35F;
+        final float COEFF = 0.055F;
+        final float MAX   = 2.00F;
+        return Math.min(BASE + this.getRenderSize() * COEFF, MAX);
     }
 
     public float getVisualScale() {
-        // Size is capped at the visual scale equivalent to 85 in-game days.
-        final float SIZE_RS_CAP = 15.5f;
-        float rs = Math.min(this.getRenderSize(), SIZE_RS_CAP);
-
         if (this.getDragonStage() <= 2) {
-            // Baby geo: kept intentionally small at hatch so the dragon looks
-            // like a true hatchling.  At rs=1: vs = 1.20 + 0.15 = 1.35.
-            final float BABY_BASE  = 1.20f;
-            final float BABY_COEFF = 0.15f;
-            return BABY_BASE + rs * BABY_COEFF;
+            // Baby geo cubes are at 1/16-block scale (body cube only 0.19 b
+            // tall), so a large visual boost is needed for the hatchling to
+            // be visible AND for the part offsets (forwardOffset, boneY) to
+            // spread the head/wings/tail outside the main AABB.  Without
+            // this the parts cluster inside the body and F3+B shows what
+            // looks like a single hitbox.
+            final float BABY_BASE  = 2.50f;
+            final float BABY_COEFF = 0.35f;
+            return BABY_BASE + this.getRenderSize() * BABY_COEFF;
         } else {
-            // Adult geo: cap mirrors getScale() → hitbox parts stay aligned.
             final float BASE  = 0.45f;
             final float COEFF = 0.055f;
             final float MAX   = 2.10f;
-            return Math.min(BASE + rs * COEFF, MAX);
+            return Math.min(BASE + this.getRenderSize() * COEFF, MAX);
         }
     }
 
@@ -3204,7 +3178,9 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
 
         float yawRad   = (this.getYRot() + 90.0F) * (float)(Math.PI / 180.0);
         float headPosX = (float)(this.getX() + worldForward * Math.cos(yawRad));
-        float headPosY = (float)(this.getY() + worldUp);
+        // -0.8 lowers the seated rider so they sit on the saddle rather
+        // than floating above the spine spikes.
+        float headPosY = (float)(this.getY() + worldUp - 0.8);
         float headPosZ = (float)(this.getZ() + worldForward * Math.sin(yawRad));
         return new Vec3(headPosX, headPosY, headPosZ);
     }

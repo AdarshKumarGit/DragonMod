@@ -20,10 +20,8 @@ import net.minecraftforge.fml.common.Mod;
  * player is drawn (and pops it after) so the seated player follows the
  * dragon's climb/dive angle.
  */
-@Mod.EventBusSubscriber(modid = DragonMod.MODID, value = Dist.CLIENT)
 public final class DragonRiderRenderHandler {
 
-    @SubscribeEvent
     public static void onRenderPlayerPre(RenderPlayerEvent.Pre event) {
         Player player = event.getEntity();
         if (!(player.getVehicle() instanceof EntityCustomDragon dragon)) return;
@@ -36,12 +34,9 @@ public final class DragonRiderRenderHandler {
         pose.pushPose();
         // Rotate around the player's hip so the body tilts in place rather
         // than swinging head-first through the saddle.
-        pose.translate(0.0f, 0.9f, 0.0f);
         pose.mulPose(Axis.XP.rotationDegrees(-pitch));
-        pose.translate(0.0f, -0.9f, 0.0f);
     }
 
-    @SubscribeEvent
     public static void onRenderPlayerPost(RenderPlayerEvent.Post event) {
         Player player = event.getEntity();
         if (!(player.getVehicle() instanceof EntityCustomDragon)) return;

@@ -89,10 +89,13 @@ public final class ClientDragonFireHandler {
             return;
         }
 
-        // DRAGON_BITE (B): trigger a melee bite. Available to all stages.
+        // DRAGON_BITE (B): trigger a melee bite.
+        // Routed through PacketDragonFireInput (mode 3) — the same confirmed-working
+        // channel as fire — so it lands in handleFireInput() on EntityCustomDragon and
+        // is handled entirely server-side, independent of player look direction.
         if (DragonFireKeybinds.DRAGON_BITE.consumeClick()) {
             DragonMod.NETWORK_WRAPPER.sendToServer(
-                    new PacketDragonControl(PacketDragonControl.BITE));
+                    new PacketDragonFireInput(dragon.getId(), (byte) 3));
             return;
         }
 

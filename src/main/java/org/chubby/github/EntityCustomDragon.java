@@ -429,6 +429,23 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     protected abstract boolean shouldTarget(Entity var1);
 
     public void resetParts(float scale) {
+        // Explicitly discard every part entity BEFORE the parent's removeParts()
+        // nulls the field references.  The parent implementation only clears the
+        // fields — it does NOT call discard() on the entities already added to the
+        // level.  Without this, every resetParts() call (stage-change, growth tick,
+        // refreshDimensions) leaves the old 10 part entities alive as ghosts while
+        // 10 new ones are spawned alongside them — producing the doubled hitbox
+        // visible in F3+B.
+        discardPart(this.headPart);
+        discardPart(this.neckPart);
+        discardPart(this.rightWingUpperPart);
+        discardPart(this.rightWingLowerPart);
+        discardPart(this.leftWingUpperPart);
+        discardPart(this.leftWingLowerPart);
+        discardPart(this.tail1Part);
+        discardPart(this.tail2Part);
+        discardPart(this.tail3Part);
+        discardPart(this.tail4Part);
         this.removeParts();
 
         if (this.getDragonStage() <= 2) {
@@ -586,8 +603,31 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
             this.tail4Part.copyPosition(this);
             this.tail4Part.setParent(this);
         }
+        if (this.level() != null && !this.level().isClientSide) {
+            spawnPartIfNeeded(this.headPart);
+            spawnPartIfNeeded(this.neckPart);
+            spawnPartIfNeeded(this.rightWingUpperPart);
+            spawnPartIfNeeded(this.rightWingLowerPart);
+            spawnPartIfNeeded(this.leftWingUpperPart);
+            spawnPartIfNeeded(this.leftWingLowerPart);
+            spawnPartIfNeeded(this.tail1Part);
+            spawnPartIfNeeded(this.tail2Part);
+            spawnPartIfNeeded(this.tail3Part);
+            spawnPartIfNeeded(this.tail4Part);
+        }
+    }
+    /** Removes a part entity from the level so it doesn't persist as a ghost after resetParts(). */
+    private static void discardPart(EntityDragonPart part) {
+        if (part != null && part.isAddedToWorld()) {
+            part.discard();
+        }
     }
 
+    private void spawnPartIfNeeded(EntityDragonPart part) {
+        if (part != null && !part.isAddedToWorld()) {
+            this.level().addFreshEntity(part);
+        }
+    }
     @Override
     public void updateParts() {
         // ── Snapshot old positions BEFORE moving parts ─────────────────────────
@@ -624,6 +664,10 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         // Pitch handling: when the dragon pitches (climbs / dives) the head
         // moves up/down and the tail moves the opposite way.  We rotate the
         // forward axis through dragonPitch so part Y tracks the rendered model.
+        // MUST match the scale used in resetParts() — both size and offset were
+        // authored at getVisualScale() units.  Using 1.0f here caused all parts
+        // to collapse toward the entity origin (offsets 2× too small), producing
+        // a double-layered hitbox visually stacked on top of the main AABB.
         float vs = this.getVisualScale();
 
         if (this.getDragonStage() <= 2) {
@@ -1944,14 +1988,20 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
 
                 this.setYRot(passenger.getYRot());
                 this.setYHeadRot(passenger.getYHeadRot());
+                // Sync dragon pitch from rider so getRiderPosition()'s pitch
+                // offset calculations use the actual look angle each tick.
+                this.setXRot(passenger.getXRot());
+
                 Vec3 riderPos = this.getRiderPosition();
 
-                // Safety floor: ensure the rider can never sink below the
-                // dragon's own feet level plus a minimum body clearance.
-                // getRiderPosition() accounts for pitch via 2-D rotation, but
-                // at extreme dive angles (nose-down > ~50°) worldUp can go
-                // negative and the player clips through the terrain.
-                double safeY = Math.max(riderPos.y,
+                // getRiderPosition() returns the saddle point (entity origin +
+                // height offset).  Add bbHeight so setPos(), which anchors the
+                // entity at its feet (bottom of AABB), places the rider ON the
+                // saddle rather than half-way through it.
+                // Safety floor prevents the feet from clipping through the
+                // terrain on extreme nose-down dives.
+                double feetY = riderPos.y + (double) passenger.getBbHeight();
+                double safeY = Math.max(feetY,
                         this.getY() + (this.getDragonStage() <= 2 ? 0.5 : 1.5));
                 passenger.setPos(riderPos.x, safeY, riderPos.z);
 
@@ -2882,16 +2932,35 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
             }
 
             if (this.isAttacking() && this.getControllingPassenger() != null && this.getControllingPassenger() instanceof Player) {
-                LivingEntity target = DragonUtils.riderLookingAtEntity(this, this.getControllingPassenger(), (double)this.getDragonStage() + (this.getBoundingBox().maxX - this.getBoundingBox().minX));
+                // ── Always start the bite animation when the attack key is held ──────
                 if (getCurrentAnimation() != ANIMATION_BITE) {
                     startAnimation(ANIMATION_BITE);
                 }
-
-                if (target != null && !DragonUtils.hasSameOwner(this, target)) {
-                    int damage = (int)this.getAttribute(Attributes.ATTACK_DAMAGE).getValue();
-                    boolean didDamage = this.logic.attackTarget(target, rider, (float)damage);
-                    if (didDamage && IafConfig.canDragonsHealFromBiting) {
-                        this.heal((float)damage * 0.1F);
+                // ── Bite detection originates from the head hitbox part ───────────────
+                // Damage is only applied on tick 0 of each bite animation cycle so that
+                // holding the key causes repeated bites (~once per 12 ticks) rather than
+                // continuous per-tick damage.  biteReach scales with the head box size so
+                // large adults have proportionally longer reach.
+                if (getAnimationTick(ANIMATION_BITE) == 0 && this.headPart != null) {
+                    Vec3 headOrigin = new Vec3(
+                            this.headPart.getX(), this.headPart.getY(), this.headPart.getZ());
+                    double biteReach  = Math.max(2.5, (double) this.headPart.getBbWidth() * 1.5);
+                    double biteReach2 = biteReach * biteReach;
+                    net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
+                            headOrigin.x - biteReach, headOrigin.y - biteReach, headOrigin.z - biteReach,
+                            headOrigin.x + biteReach, headOrigin.y + biteReach, headOrigin.z + biteReach);
+                    java.util.List<LivingEntity> nearby = this.level().getEntitiesOfClass(
+                            LivingEntity.class, biteBox,
+                            e -> e != this && e != rider && e.isAlive()
+                                    && !this.isPassengerOfSameVehicle(e)
+                                    && !DragonUtils.hasSameOwner(this, e)
+                                    && e.distanceToSqr(headOrigin.x, headOrigin.y, headOrigin.z) <= biteReach2);
+                    int damage = (int) this.getAttribute(Attributes.ATTACK_DAMAGE).getValue();
+                    for (LivingEntity target : nearby) {
+                        boolean didDamage = this.logic.attackTarget(target, rider, (float) damage);
+                        if (didDamage && IafConfig.canDragonsHealFromBiting) {
+                            this.heal((float) damage * 0.1F);
+                        }
                     }
                 }
             }
@@ -2934,13 +3003,27 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
             }
 
             if (this.isAttacking() && this.getControllingPassenger() != null && this.getControllingPassenger() instanceof Player) {
-                LivingEntity target = DragonUtils.riderLookingAtEntity(this, this.getControllingPassenger(), (double)this.getDragonStage() + (this.getBoundingBox().maxX - this.getBoundingBox().minX));
                 if (getCurrentAnimation() != ANIMATION_BITE) {
                     startAnimation(ANIMATION_BITE);
                 }
-
-                if (target != null && !DragonUtils.hasSameOwner(this, target)) {
-                    this.logic.attackTarget(target, ridingPlayer, (float)((int)this.getAttribute(Attributes.ATTACK_DAMAGE).getValue()));
+                if (getAnimationTick(ANIMATION_BITE) == 0 && this.headPart != null) {
+                    Vec3 headOrigin = new Vec3(
+                            this.headPart.getX(), this.headPart.getY(), this.headPart.getZ());
+                    double biteReach  = Math.max(2.5, (double) this.headPart.getBbWidth() * 1.5);
+                    double biteReach2 = biteReach * biteReach;
+                    net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
+                            headOrigin.x - biteReach, headOrigin.y - biteReach, headOrigin.z - biteReach,
+                            headOrigin.x + biteReach, headOrigin.y + biteReach, headOrigin.z + biteReach);
+                    int damage = (int) this.getAttribute(Attributes.ATTACK_DAMAGE).getValue();
+                    java.util.List<LivingEntity> nearby = this.level().getEntitiesOfClass(
+                            LivingEntity.class, biteBox,
+                            e -> e != this && e != ridingPlayer && e.isAlive()
+                                    && !this.isPassengerOfSameVehicle(e)
+                                    && !DragonUtils.hasSameOwner(this, e)
+                                    && e.distanceToSqr(headOrigin.x, headOrigin.y, headOrigin.z) <= biteReach2);
+                    for (LivingEntity target : nearby) {
+                        this.logic.attackTarget(target, ridingPlayer, (float) damage);
+                    }
                 }
             }
 
@@ -3127,61 +3210,84 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         // visualScale so the saddle tracks the model at every size.
         // Formula keeps the same quadratic curve shape as the original but
         // anchored to the shoulderblade Y rather than the neck/head.
-        return 0.00150F * Mth.square(this.getRenderSize()) + 0.17F * this.getRenderSize() - 0.8F;
+        return (0.00150F * Mth.square(this.getRenderSize()) + 0.17F * this.getRenderSize() - 0.8F) / 1.2F;
     }
 
     protected float getRideHorizontalBase() {
         // Between the shoulderblades → forward offset is much smaller than the
         // old "neck" position.  Positive values push the saddle forward of the
         // hip pivot; ~0.5–1.0 blocks forward lands between the wing roots.
-        return 0.00120F * Mth.square(this.getRenderSize()) + 0.06F * this.getRenderSize() + 0.2F;
+        return 0.00120F * Mth.square(this.getRenderSize()) + 0.06F * this.getRenderSize() + 0.2F + 2.1F;
     }
 
     public Vec3 getRiderPosition() {
-        float vs          = this.getVisualScale();
+        float extraXZ = 0.0F;
+        float extraY  = 0.0F;
+
+        // ── Pitch offsets ─────────────────────────────────────────────────────
+        // Shift the saddle point forward/backward and up/down with dragon pitch
+        // so the rider stays visually on the back through climbs and dives.
+        // Scaled by renderSize so large dragons get proportionally larger shifts.
         float dragonPitch = this.getDragonPitch();
+        float pitchXZ;
+        float pitchY;
+        if (dragonPitch > 0.0F) {
+            // Nose-up: push saddle slightly forward, drop it slightly.
+            pitchXZ =  Math.min( dragonPitch / 90.0F,  0.2F);
+            pitchY  = -(dragonPitch / 90.0F) * 0.6F;
+        } else if (dragonPitch < 0.0F) {
+            // Nose-down: push saddle slightly back, raise it slightly.
+            pitchXZ = Math.max(dragonPitch / 90.0F, -0.5F);
+            pitchY  = dragonPitch / 90.0F * 0.03F;
+        } else {
+            pitchXZ = 0.0F;
+            pitchY  = 0.0F;
+        }
+        extraXZ += pitchXZ * this.getRenderSize();
+        extraY  += pitchY  * this.getRenderSize();
+
+        // ── Rider look-angle nudge ────────────────────────────────────────────
+        // When the rider looks upward (negative Minecraft XRot) shift the saddle
+        // down a touch so the camera clears the dragon's spine.
         LivingEntity rider = this.getControllingPassenger();
-
-        // Forward offset: +2.4 lands the rider at the wing-root saddle area.
-        float xzMod = this.getRideHorizontalBase() + 2.4F;
-
-        // ── Saddle height ─────────────────────────────────────────────────────
-        // Sit the rider ON the dragon's back surface (top of the body cube),
-        // not inside the body.  Adult body cube tops out at y=56/16 = 3.5 b
-        // above the entity origin at visualScale = 1.0 (from dragon.geo.json).
-        // The earlier 2.10 value tracked the body centre, which put the rider's
-        // legs inside the torso. +0.10 lifts the rider a hair clear of the
-        // spine spikes so they look seated, not embedded.
-        float bodyTop   = (this.getDragonStage() <= 2) ? (vs * 0.50f) : (vs * 3.50f);
-        float shoulderY = bodyTop + 0.10f;
-
-        // Walking bounce: small upward push when the rider drives forward on ground.
-        if (!this.isFlying() && !this.isHovering()) {
-            if (rider != null && rider.zza > 0.0F) {
-                this.riderWalkingExtraY = Math.min(0.25F, this.riderWalkingExtraY + 0.04F);
-            } else {
-                this.riderWalkingExtraY = Math.max(0.0F, this.riderWalkingExtraY - 0.08F);
-            }
-            shoulderY += this.riderWalkingExtraY;
+        if (rider != null && rider.getXRot() < 0.0F) {
+            extraY += (float) Mth.map((double) rider.getXRot(),
+                    60.0, -40.0, -0.1, 0.1);
         }
 
-        // Full 2-D pitch rotation in the (forward, up) plane.
-        float pitchRad   = dragonPitch * (float)(Math.PI / 180.0);
-        float cosP       = (float)Math.cos(pitchRad);
-        float sinP       = (float)Math.sin(pitchRad);
-        float worldForward = xzMod * cosP - shoulderY * sinP;
-        float worldUp      = xzMod * sinP + shoulderY * cosP;
+        // ── Walking bounce vs flying lift ─────────────────────────────────────
+        // linearFactor ramps from 0 → 1 over the dragon's teenage growth spurt
+        // (days 50–125) so hatchlings get no extra height, adults get the full lift.
+        float linearFactor = Mth.map(
+                (float) Math.max(this.getAgeInDays() - 50, 0),
+                0.0F, 75.0F, 0.0F, 1.0F);
 
-        // Floor: prevent rider going below entity feet on steep dives.
-        float minWorldUp = (this.getDragonStage() <= 2) ? 0.8f : 2.0f;
-        worldUp = Math.max(worldUp, minWorldUp);
+        if (!this.isFlying() && !this.isHovering()) {
+            // Ground: gentle vertical bounce while walking forward.
+            if (rider != null && rider.zza > 0.0F) {
+                float maxRaise = 1.1F * linearFactor + this.getRideHeightBase() * 0.1F;
+                this.riderWalkingExtraY = Math.min(maxRaise,
+                        this.riderWalkingExtraY + 0.1F);
+            } else {
+                this.riderWalkingExtraY = Math.max(0.0F,
+                        this.riderWalkingExtraY - 0.15F);
+            }
+            extraY += this.riderWalkingExtraY;
+        } else {
+            // Air: lift the saddle point so the rider sits above the wing roots
+            // and the wings don't clip through the player model.
+            extraY += 1.1F * linearFactor;
+            extraY += this.getRideHeightBase() * 0.6F;
+        }
+
+        // ── Final world-space position ────────────────────────────────────────
+        float xzMod = this.getRideHorizontalBase() + extraXZ;
+        float yMod  = this.getRideHeightBase()      + extraY;
 
         float yawRad   = (this.getYRot() + 90.0F) * (float)(Math.PI / 180.0);
-        float headPosX = (float)(this.getX() + worldForward * Math.cos(yawRad));
-        // -0.8 lowers the seated rider so they sit on the saddle rather
-        // than floating above the spine spikes.
-        float headPosY = (float)(this.getY() + worldUp - 0.8);
-        float headPosZ = (float)(this.getZ() + worldForward * Math.sin(yawRad));
+        float headPosX = (float)(this.getX() + (double)(xzMod * Mth.cos(yawRad)));
+        float headPosY = (float)(this.getY() + (double) yMod);
+        float headPosZ = (float)(this.getZ() + (double)(xzMod * Mth.sin(yawRad)));
         return new Vec3(headPosX, headPosY, headPosZ);
     }
 
@@ -3352,7 +3458,52 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         LOGGER.info("[DragonFire] handleFireInput mode={} rider={} isBaby={}",
                 mode, rider != null ? rider.getName().getString() : "null", this.isBaby());
 
-        if (rider == null || this.isBaby()) {
+        if (rider == null) {
+            this.setFireMode((byte) 0);
+            this.setBreathingFire(false);
+            return;
+        }
+
+        // ── Bite (mode 3) — works at any dragon stage, no fire involved ──────
+        // Sphere check originates from the head hitbox part so hit detection is
+        // completely independent of the player's look direction or position.
+        if (mode == 3) {
+            // Force-restart: stop any in-progress bite so a new keypress always
+            // resets the animation from frame 0 rather than being silently ignored.
+            this.stopCurrentAnimation();
+            this.ANIMATION_BITE.stop();
+            startAnimation(ANIMATION_BITE);
+
+            if (this.headPart != null) {
+                Vec3 headOrigin = new Vec3(
+                        this.headPart.getX(), this.headPart.getY(), this.headPart.getZ());
+                double biteReach  = Math.max(2.5, (double) this.headPart.getBbWidth() * 1.5);
+                double biteReach2 = biteReach * biteReach;
+                net.minecraft.world.phys.AABB biteBox = new net.minecraft.world.phys.AABB(
+                        headOrigin.x - biteReach, headOrigin.y - biteReach, headOrigin.z - biteReach,
+                        headOrigin.x + biteReach, headOrigin.y + biteReach, headOrigin.z + biteReach);
+                int damage = (int) this.getAttribute(Attributes.ATTACK_DAMAGE).getValue();
+                java.util.List<LivingEntity> nearby = this.level().getEntitiesOfClass(
+                        LivingEntity.class, biteBox,
+                        e -> e != this && e != rider && e.isAlive()
+                                && !this.isPassengerOfSameVehicle(e)
+                                && !DragonUtils.hasSameOwner(this, e)
+                                && e.distanceToSqr(headOrigin.x, headOrigin.y, headOrigin.z) <= biteReach2);
+                for (LivingEntity target : nearby) {
+                    if(rider instanceof Player player){
+                        boolean didDamage = this.logic.attackTarget(target, player, (float) damage);
+                        if (didDamage && IafConfig.canDragonsHealFromBiting) {
+                            this.heal((float) damage * 0.1F);
+                        }
+                    }
+
+                }
+            }
+            return;
+        }
+
+        // Remaining fire modes require an adult (stage >= 2)
+        if (this.isBaby()) {
             this.setFireMode((byte) 0);
             this.setBreathingFire(false);
             return;
@@ -3910,14 +4061,13 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         controllers.add(new AnimationController<>(
                 this,
                 "bite_controller",
-                0,
+                2,
                 animState -> {
-                    if (animState.getAnimatable().getSyncedAnimId() == ANIM_ID_BITE) {
+                    if (this.getCurrentAnimation() == ANIMATION_BITE) {
                         // forceAnimationReset() clears GeckoLib's "already playing this
                         // animation" guard so PLAY_ONCE always restarts from frame 0
                         // even if the controller previously held the final frame.
                         // Without this, every bite after the first is silently ignored.
-                        animState.getController().forceAnimationReset();
                         return animState.setAndContinue(
                                 RawAnimation.begin()
                                         .then("bite", Animation.LoopType.PLAY_ONCE));

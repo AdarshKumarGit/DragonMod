@@ -78,7 +78,8 @@ minecraft {
             // "REGISTRIES": For firing of registry events.
             // "REGISTRYDUMP": For getting the contents of all registries.
             property 'forge.logging.markers', 'REGISTRIES'
-
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
             // Recommended logging level for the console
             // You can set various levels here.
             // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
@@ -208,7 +209,13 @@ publishing {
         }
     }
 }
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
 
+    config "${mod_id}.mixins.json"
+
+    debug.export = true
+}
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }

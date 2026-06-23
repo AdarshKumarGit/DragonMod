@@ -5,7 +5,9 @@ import com.mojang.math.Axis;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
+import software.bernie.geckolib.cache.object.GeoBone;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
 
 public class EntityCustomDragonRenderer extends GeoEntityRenderer<EntityDragon> {
@@ -40,6 +42,13 @@ public class EntityCustomDragonRenderer extends GeoEntityRenderer<EntityDragon> 
     // and the player sits at a position computed from a stale yBodyRot, causing
     // the "rider floating / not moving with dragon" issue.
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Bone name of the rider's seat — the base of the neck (between the
+    // shoulderblades).  Baby and adult geo use different bone names.
+    // -------------------------------------------------------------------------
+    private static final String ADULT_SEAT_BONE = "Neck1";
+    private static final String BABY_SEAT_BONE  = "Neck";
+
     @Override
     public void render(EntityDragon animatable,
                        float entityYaw,
@@ -48,7 +57,29 @@ public class EntityCustomDragonRenderer extends GeoEntityRenderer<EntityDragon> 
                        MultiBufferSource bufferSource,
                        int packedLight) {
         animatable.updatePartsForRender(partialTick);
+
+        // ── Capture the animated seat-bone world position ─────────────────────
+        // GeckoLib only populates a bone's world-space matrix when the bone is
+        // flagged for matrix tracking.  We flag the neck-base bone BEFORE the
+        // model is rendered, then read its world position AFTER, and hand it to
+        // the entity so positionRider()/getRiderPosition() can pin the rider to
+        // the actual animated bone instead of a hardcoded analytic offset.
+        // Without this the rider floats off the back whenever a bone animation
+        // (fire breath, roar, take-off bob, …) moves the body.
+        String seatBoneName = animatable.getDragonStage() <= 2 ? BABY_SEAT_BONE : ADULT_SEAT_BONE;
+        GeoBone seatBone = this.getGeoModel().getBone(seatBoneName).orElse(null);
+        if (seatBone != null) {
+            seatBone.setTrackingMatrices(true);
+        }
+
         super.render(animatable, entityYaw, partialTick, poseStack, bufferSource, packedLight);
+
+        if (seatBone != null) {
+            Vec3 boneWorld = seatBone.getWorldPosition();
+            if (boneWorld != null) {
+                animatable.setSeatBoneWorldPos(boneWorld);
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

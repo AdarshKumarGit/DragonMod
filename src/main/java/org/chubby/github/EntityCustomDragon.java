@@ -3266,7 +3266,7 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
      * back.
      */
     protected float getSeatVerticalOffset() {
-        return (this.getDragonStage() <= 2 ? 0.10F : 0.80F) * this.getVisualScale();
+        return (this.getDragonStage() <= 2 ? 0.05F : 0.50F) * this.getVisualScale();
     }
 
     public Vec3 getRiderPosition() {

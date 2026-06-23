@@ -334,6 +334,28 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     protected float glidingSpeedBonus;
     protected float riderWalkingExtraY;
 
+    /**
+     * World-space position of the seat bone (the neck-base pivot) captured every
+     * render frame by {@link EntityCustomDragonRenderer}.  Client-side only —
+     * {@code null} on the server and until the dragon has been rendered at least
+     * once.
+     *
+     * <p>The original {@link #getRiderPosition()} computed the saddle point purely
+     * analytically (entity origin + hardcoded forward/height/pitch offsets).  That
+     * works for Ice and Fire's vanilla model, whose bone motion is driven by Java
+     * code the rider math can mirror, but it does NOT track GeckoLib bone
+     * animations: when an animation (fire breath, roar, take-off bob, …) keyframes
+     * the body/neck bones, the analytic saddle stays put and the rider visibly
+     * floats off the moving back.  It also swung the rider through a wide arc when
+     * the mouse turned, because the saddle was offset ~2-3 blocks forward of the
+     * entity origin and snapped around with {@code yRot}.
+     *
+     * <p>By reading the actual animated bone position here instead, the rider stays
+     * pinned to the neck-base pivot through every animation and turns with the
+     * smoothly-interpolated body rotation rather than the raw mouse yaw.
+     */
+    private net.minecraft.world.phys.Vec3 seatBoneWorldPos = null;
+
     public EntityCustomDragon(EntityType t, Level world, DragonType type, double minimumDamage, double maximumDamage, double minimumHealth, double maximumHealth, double minimumSpeed, double maximumSpeed) {
         super(t, world,type,minimumDamage,maximumDamage,minimumHealth,maximumHealth,minimumSpeed,maximumSpeed);
         this.growth_stages = new float[][]{growth_stage_1, growth_stage_2, growth_stage_3, growth_stage_4, growth_stage_5};
@@ -3220,7 +3242,46 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
         return 0.00120F * Mth.square(this.getRenderSize()) + 0.06F * this.getRenderSize() + 0.2F + 2.1F;
     }
 
+    /**
+     * Stores the live world position of the seat bone.  Called by the renderer
+     * once per frame after the model has been drawn (so the GeckoLib matrices are
+     * populated).  See {@link #seatBoneWorldPos}.
+     */
+    public void setSeatBoneWorldPos(net.minecraft.world.phys.Vec3 pos) {
+        this.seatBoneWorldPos = pos;
+    }
+
+    public net.minecraft.world.phys.Vec3 getSeatBoneWorldPos() {
+        return this.seatBoneWorldPos;
+    }
+
+    /**
+     * Vertical lift (world blocks) from the neck-base bone pivot up to the saddle
+     * surface on the dragon's spine, so the rider sits ON the back rather than
+     * sunk into the pivot.  The bone world position already includes the model's
+     * visual scale, so this is scaled by {@link #getVisualScale()} to stay
+     * proportional across growth stages.
+     *
+     * <p>This is the one knob to tune if the rider sinks into or floats above the
+     * back.
+     */
+    protected float getSeatVerticalOffset() {
+        return (this.getDragonStage() <= 2 ? 0.10F : 0.80F) * this.getVisualScale();
+    }
+
     public Vec3 getRiderPosition() {
+        // ── Preferred path: follow the live animated bone (client render) ──────
+        // When the renderer has captured the neck-base bone this frame, place the
+        // rider directly on top of that bone.  This makes the seat track every
+        // GeckoLib bone animation and keeps it pinned to the neck pivot when the
+        // mouse turns, instead of floating / arcing as the old analytic offset did.
+        Vec3 bonePos = this.seatBoneWorldPos;
+        if (bonePos != null) {
+            return new Vec3(bonePos.x, bonePos.y + this.getSeatVerticalOffset(), bonePos.z);
+        }
+
+        // ── Fallback: analytic saddle point ───────────────────────────────────
+        // Used on the server (no render data) and before the first client frame.
         float extraXZ = 0.0F;
         float extraY  = 0.0F;
 

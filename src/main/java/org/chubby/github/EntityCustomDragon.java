@@ -335,10 +335,12 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     protected float riderWalkingExtraY;
 
     /**
-     * World-space position of the seat bone (the neck-base pivot) captured every
-     * render frame by {@link EntityCustomDragonRenderer}.  Client-side only —
-     * {@code null} on the server and until the dragon has been rendered at least
-     * once.
+     * Seat bone (the neck-base pivot) offset expressed in the dragon's OWN body
+     * frame — forward / up / right relative to {@code yBodyRot} — captured every
+     * render frame by {@link EntityCustomDragonRenderer}.  Client-side only:
+     * {@code seatOffsetValid} stays {@code false} on the server and until the
+     * dragon has been rendered at least once, in which case
+     * {@link #getRiderPosition()} falls back to the analytic saddle point.
      *
      * <p>The original {@link #getRiderPosition()} computed the saddle point purely
      * analytically (entity origin + hardcoded forward/height/pitch offsets).  That
@@ -346,15 +348,23 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
      * code the rider math can mirror, but it does NOT track GeckoLib bone
      * animations: when an animation (fire breath, roar, take-off bob, …) keyframes
      * the body/neck bones, the analytic saddle stays put and the rider visibly
-     * floats off the moving back.  It also swung the rider through a wide arc when
-     * the mouse turned, because the saddle was offset ~2-3 blocks forward of the
-     * entity origin and snapped around with {@code yRot}.
+     * floats off the moving back.
      *
-     * <p>By reading the actual animated bone position here instead, the rider stays
-     * pinned to the neck-base pivot through every animation and turns with the
-     * smoothly-interpolated body rotation rather than the raw mouse yaw.
+     * <p><b>Why a body-local offset instead of a raw world position:</b> the bone
+     * world position is captured at render time using the <em>interpolated</em>
+     * body yaw, but {@link #positionRider} consumes it once per tick.  Feeding a
+     * raw world position back caused the per-tick seat targets to be unevenly
+     * spaced while turning, which the passenger's own render interpolation turned
+     * into visible camera jitter.  Storing the offset in the body frame and
+     * rebuilding the world point from the authoritative <em>tick</em>
+     * {@code yBodyRot} in {@link #getRiderPosition()} makes the per-tick path
+     * smooth (exactly how vanilla positions ridden entities), while the forward /
+     * up components still track the bone animation.
      */
-    private net.minecraft.world.phys.Vec3 seatBoneWorldPos = null;
+    private double seatOffsetForward = 0.0;
+    private double seatOffsetUp      = 0.0;
+    private double seatOffsetRight   = 0.0;
+    private boolean seatOffsetValid  = false;
 
     public EntityCustomDragon(EntityType t, Level world, DragonType type, double minimumDamage, double maximumDamage, double minimumHealth, double maximumHealth, double minimumSpeed, double maximumSpeed) {
         super(t, world,type,minimumDamage,maximumDamage,minimumHealth,maximumHealth,minimumSpeed,maximumSpeed);
@@ -2016,14 +2026,15 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
 
                 Vec3 riderPos = this.getRiderPosition();
 
-                // getRiderPosition() returns the saddle point (entity origin +
-                // height offset).  Add bbHeight so setPos(), which anchors the
-                // entity at its feet (bottom of AABB), places the rider ON the
-                // saddle rather than half-way through it.
+                // getRiderPosition() returns the seat SURFACE — i.e. where the
+                // rider's feet should rest.  setPos() anchors an entity at its
+                // feet (the bottom of its AABB), so we pass riderPos.y directly.
+                // The old code added passenger.getBbHeight() here, which pushed
+                // the feet a full player-height (~1.8 b) above the seat and made
+                // the rider float above the back.
                 // Safety floor prevents the feet from clipping through the
                 // terrain on extreme nose-down dives.
-                double feetY = riderPos.y + (double) passenger.getBbHeight();
-                double safeY = Math.max(feetY,
+                double safeY = Math.max(riderPos.y,
                         this.getY() + (this.getDragonStage() <= 2 ? 0.5 : 1.5));
                 passenger.setPos(riderPos.x, safeY, riderPos.z);
 
@@ -3243,22 +3254,33 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
     }
 
     /**
-     * Stores the live world position of the seat bone.  Called by the renderer
-     * once per frame after the model has been drawn (so the GeckoLib matrices are
-     * populated).  See {@link #seatBoneWorldPos}.
+     * Stores the seat bone offset in the dragon's body frame.  Called by the
+     * renderer once per frame after the model has been drawn (so the GeckoLib
+     * matrices are populated), passing the bone's world position and the
+     * interpolated body yaw it was captured at.  See {@link #seatOffsetForward}.
      */
-    public void setSeatBoneWorldPos(net.minecraft.world.phys.Vec3 pos) {
-        this.seatBoneWorldPos = pos;
-    }
+    public void setSeatBoneWorldPos(net.minecraft.world.phys.Vec3 boneWorld, float renderBodyYawDeg) {
+        // Vector from the entity origin (tick position) to the bone, in world axes.
+        double dx = boneWorld.x - this.getX();
+        double dy = boneWorld.y - this.getY();
+        double dz = boneWorld.z - this.getZ();
 
-    public net.minecraft.world.phys.Vec3 getSeatBoneWorldPos() {
-        return this.seatBoneWorldPos;
+        // Project onto the body frame using the yaw the bone was rendered at, so
+        // the stored components are yaw-independent.  Basis:
+        //   forward = (-sin, cos)   right = (cos, sin)   (x,z components)
+        double yawRad = Math.toRadians(renderBodyYawDeg);
+        double sin = Math.sin(yawRad);
+        double cos = Math.cos(yawRad);
+        this.seatOffsetForward = -sin * dx + cos * dz;
+        this.seatOffsetRight   =  cos * dx + sin * dz;
+        this.seatOffsetUp      = dy;
+        this.seatOffsetValid   = true;
     }
 
     /**
      * Vertical lift (world blocks) from the neck-base bone pivot up to the saddle
      * surface on the dragon's spine, so the rider sits ON the back rather than
-     * sunk into the pivot.  The bone world position already includes the model's
+     * sunk into the pivot.  The captured offset already includes the model's
      * visual scale, so this is scaled by {@link #getVisualScale()} to stay
      * proportional across growth stages.
      *
@@ -3266,18 +3288,26 @@ public abstract class EntityCustomDragon extends EntityDragonBase implements Geo
      * back.
      */
     protected float getSeatVerticalOffset() {
-        return (this.getDragonStage() <= 2 ? 0.05F : 0.50F) * this.getVisualScale();
+        return (this.getDragonStage() <= 2 ? 0.05F : 0.10F) * this.getVisualScale();
     }
 
     public Vec3 getRiderPosition() {
         // ── Preferred path: follow the live animated bone (client render) ──────
-        // When the renderer has captured the neck-base bone this frame, place the
-        // rider directly on top of that bone.  This makes the seat track every
-        // GeckoLib bone animation and keeps it pinned to the neck pivot when the
-        // mouse turns, instead of floating / arcing as the old analytic offset did.
-        Vec3 bonePos = this.seatBoneWorldPos;
-        if (bonePos != null) {
-            return new Vec3(bonePos.x, bonePos.y + this.getSeatVerticalOffset(), bonePos.z);
+        // Rebuild the seat world position from the body-frame offset captured by
+        // the renderer, rotated by the AUTHORITATIVE tick yBodyRot.  This makes
+        // the seat track every GeckoLib bone animation and stay pinned to the
+        // neck pivot, while producing a smooth per-tick path (no camera jitter)
+        // instead of the raw interpolated world position the renderer sees.
+        if (this.seatOffsetValid) {
+            double yawRad = Math.toRadians(this.yBodyRot);
+            double sin = Math.sin(yawRad);
+            double cos = Math.cos(yawRad);
+            double dx = -sin * this.seatOffsetForward + cos * this.seatOffsetRight;
+            double dz =  cos * this.seatOffsetForward + sin * this.seatOffsetRight;
+            return new Vec3(
+                    this.getX() + dx,
+                    this.getY() + this.seatOffsetUp + this.getSeatVerticalOffset(),
+                    this.getZ() + dz);
         }
 
         // ── Fallback: analytic saddle point ───────────────────────────────────

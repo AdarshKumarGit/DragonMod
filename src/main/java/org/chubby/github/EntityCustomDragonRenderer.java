@@ -77,7 +77,13 @@ public class EntityCustomDragonRenderer extends GeoEntityRenderer<EntityDragon> 
         if (seatBone != null) {
             Vec3 boneWorld = seatBone.getWorldPosition();
             if (boneWorld != null) {
-                animatable.setSeatBoneWorldPos(boneWorld);
+                // Hand the bone world position to the entity together with the
+                // interpolated body yaw it was captured at, so the entity can
+                // store a yaw-independent body-frame offset and rebuild a smooth,
+                // jitter-free seat position from its own tick yBodyRot.
+                float renderBodyYaw = Mth.rotLerp(partialTick,
+                        animatable.yBodyRotO, animatable.yBodyRot);
+                animatable.setSeatBoneWorldPos(boneWorld, renderBodyYaw);
             }
         }
     }
